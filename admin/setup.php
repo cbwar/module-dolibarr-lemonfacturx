@@ -50,6 +50,7 @@ if ($action == 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 		['LEMONFACTURX_ENABLED',      GETPOSTINT('LEMONFACTURX_ENABLED'),         'int'],
 		['LEMONFACTURX_BANK_ACCOUNT', GETPOSTINT('LEMONFACTURX_BANK_ACCOUNT'),    'int'],
 		['LEMONFACTURX_PAYMENT_MEANS',trim(GETPOST('LEMONFACTURX_PAYMENT_MEANS', 'alpha')), 'chaine'],
+		['LEMONFACTURX_ENDPOINT_SCHEME',trim(GETPOST('LEMONFACTURX_ENDPOINT_SCHEME', 'alpha')), 'chaine'],
 		['LEMONFACTURX_STRICT_MODE',  GETPOSTINT('LEMONFACTURX_STRICT_MODE'),     'int'],
 		['LEMONFACTURX_PHP_CLI_PATH', trim(GETPOST('LEMONFACTURX_PHP_CLI_PATH', 'alphanohtml')), 'chaine'],
 		['LEMONFACTURX_NOTE_PMD',     trim(GETPOST('LEMONFACTURX_NOTE_PMD', 'restricthtml')),    'chaine'],
@@ -138,6 +139,21 @@ print '<select name="LEMONFACTURX_PAYMENT_MEANS" class="flat">';
 print '<option value="30"'.($currentMeans == '30' ? ' selected' : '').'>30 - '.$langs->trans("PaymentMeans30").'</option>';
 print '<option value="58"'.($currentMeans == '58' ? ' selected' : '').'>58 - '.$langs->trans("PaymentMeans58").'</option>';
 print '<option value="49"'.($currentMeans == '49' ? ' selected' : '').'>49 - '.$langs->trans("PaymentMeans49").'</option>';
+print '</select>';
+print '</td>';
+print '</tr>';
+
+// Schéma d'adressage de l'endpoint (BT-34 / BT-49)
+print '<tr class="oddeven">';
+print '<td>'.$langs->trans("LemonFacturXEndpointScheme");
+print '<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXEndpointSchemeHint").'</span>';
+print '</td>';
+print '<td>';
+$endpointScheme = getDolGlobalString('LEMONFACTURX_ENDPOINT_SCHEME', '0225');
+print '<select name="LEMONFACTURX_ENDPOINT_SCHEME" class="flat">';
+print '<option value="0225"'.($endpointScheme == '0225' ? ' selected' : '').'>0225 - '.$langs->trans("EndpointScheme0225").'</option>';
+print '<option value="0002"'.($endpointScheme == '0002' ? ' selected' : '').'>0002 - '.$langs->trans("EndpointScheme0002").'</option>';
+print '<option value="0009"'.($endpointScheme == '0009' ? ' selected' : '').'>0009 - '.$langs->trans("EndpointScheme0009").'</option>';
 print '</select>';
 print '</td>';
 print '</tr>';

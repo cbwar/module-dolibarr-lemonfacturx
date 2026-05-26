@@ -7,7 +7,7 @@
  *  - TypeCode documentaire attendu (380/381/386)
  *  - CategoryCode(s) présents (S/K/G/O/E)
  *  - unitCode UN/ECE (C62, HUR, DAY...)
- *  - Présence/absence d'ExemptionReason et URIUniversalCommunication buyer
+ *  - Présence/absence d'ExemptionReason et URIUniversalCommunication buyer (+ schemeID endpoint)
  *  - Présence/absence de TotalPrepaidAmount et valeur de DuePayableAmount
  *  - Validation XSD Factur-X EN16931
  *
@@ -43,16 +43,16 @@ require_once __DIR__.'/../core/lib/lemonfacturx.lib.php';
 $xsdPath = __DIR__.'/../vendor/atgp/factur-x/xsd/factur-x/en16931/Factur-X_1.08_EN16931.xsd';
 
 $cases = [
-	1  => ['ref' => 'F001 standard FR 20%',    'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'exemption' => false, 'prepaid' => null, 'due' => 1200.00],
-	2  => ['ref' => 'F002 multi-TVA 20% + 5,5%','typeCode' => '380','mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'exemption' => false, 'prepaid' => null, 'due' => 1727.50],
-	3  => ['ref' => 'F003 TVA 0% franchise',   'typeCode' => '380', 'mainCategory' => 'E',  'unitCode' => 'C62', 'buyerUri' => true,  'exemption' => true,  'prepaid' => null, 'due' => 500.00],
-	4  => ['ref' => 'F004 avoir',              'typeCode' => '381', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'exemption' => false, 'prepaid' => null, 'due' => 0.00],
-	5  => ['ref' => 'F005 ligne en heures',    'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'HUR', 'buyerUri' => true,  'exemption' => false, 'prepaid' => null, 'due' => 960.00],
-	6  => ['ref' => 'F006 ligne en jours',     'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'DAY', 'buyerUri' => true,  'exemption' => false, 'prepaid' => null, 'due' => 2700.00],
-	7  => ['ref' => 'F007 buyer sans email',   'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => false, 'exemption' => false, 'prepaid' => null, 'due' => 600.00],
-	8  => ['ref' => 'F008 UE autoliquidation', 'typeCode' => '380', 'mainCategory' => 'K',  'unitCode' => 'C62', 'buyerUri' => true,  'exemption' => true,  'prepaid' => null, 'due' => 2000.00],
-	9  => ['ref' => 'F009 acompte (deposit)',  'typeCode' => '386', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'exemption' => false, 'prepaid' => null, 'due' => 240.00],
-	10 => ['ref' => 'F010 finale avec acompte','typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'exemption' => false, 'prepaid' => 240.00, 'due' => 960.00],
+	1  => ['ref' => 'F001 standard FR 20%',    'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 1200.00],
+	2  => ['ref' => 'F002 multi-TVA 20% + 5,5%','typeCode' => '380','mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 1727.50],
+	3  => ['ref' => 'F003 TVA 0% franchise',   'typeCode' => '380', 'mainCategory' => 'E',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => true,  'prepaid' => null, 'due' => 500.00],
+	4  => ['ref' => 'F004 avoir',              'typeCode' => '381', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 0.00],
+	5  => ['ref' => 'F005 ligne en heures',    'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'HUR', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 960.00],
+	6  => ['ref' => 'F006 ligne en jours',     'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'DAY', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 2700.00],
+	7  => ['ref' => 'F007 buyer sans email',   'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 600.00],
+	8  => ['ref' => 'F008 UE autoliquidation', 'typeCode' => '380', 'mainCategory' => 'K',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => 'EM',   'exemption' => true,  'prepaid' => null, 'due' => 2000.00],
+	9  => ['ref' => 'F009 acompte (deposit)',  'typeCode' => '386', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 240.00],
+	10 => ['ref' => 'F010 finale avec acompte','typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => 240.00, 'due' => 960.00],
 ];
 
 $totalPassed = 0;
@@ -104,12 +104,14 @@ foreach ($cases as $id => $c) {
 		$buyerBlock = $mB[0];
 	}
 	$buyerHasUri = strpos($buyerBlock, '<ram:URIUniversalCommunication>') !== false;
+	$buyerUriScheme = $buyerHasUri ? getXmlSingleMatch('#<ram:URIID schemeID="([^"]+)"#', $buyerBlock) : null;
 
 	// Assertions
 	assertEquals($c['typeCode'], $typeCode, 'TypeCode', $pass, $fail, $caseFailures, $id);
 	assertEquals(true, in_array($c['mainCategory'], $categories, true), 'CategoryCode contient '.$c['mainCategory'], $pass, $fail, $caseFailures, $id);
 	assertEquals(true, in_array($c['unitCode'], $units, true), 'unitCode contient '.$c['unitCode'], $pass, $fail, $caseFailures, $id);
 	assertEquals($c['buyerUri'], $buyerHasUri, 'BuyerTradeParty URI présent', $pass, $fail, $caseFailures, $id);
+	assertEquals($c['buyerUriScheme'], $buyerUriScheme, 'BuyerTradeParty URIID schemeID', $pass, $fail, $caseFailures, $id);
 	assertEquals($c['exemption'], $hasExemption, 'ExemptionReason présent', $pass, $fail, $caseFailures, $id);
 	assertEquals($c['prepaid'] === null ? null : (float) $c['prepaid'], $prepaid === null ? null : (float) $prepaid, 'TotalPrepaidAmount', $pass, $fail, $caseFailures, $id);
 	assertEquals((float) $c['due'], $due === null ? null : (float) $due, 'DuePayableAmount', $pass, $fail, $caseFailures, $id);

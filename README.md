@@ -253,6 +253,17 @@ php tests/run-tests.php
 
 ## Changelog
 
+### 2.1.0 (mai 2026)
+
+Adressage de routage par SIREN pour le réseau des Plateformes Agréées (PA/PDP) :
+
+- **Endpoint BT-34 / BT-49 (`URIUniversalCommunication/URIID`)** : l'adresse électronique du vendeur et de l'acheteur porte désormais le **SIREN avec `schemeID="0225"`** (annuaire PPF, XP Z12-012) au lieu de l'email (`schemeID="EM"`). C'est ce qu'attend le routage du réseau des Plateformes Agréées : un email n'est pas routable et déclenchait un rejet au pre-check des PDP (`receiver address does not exist in peppol directory`).
+- **Schéma configurable** : nouveau réglage `LEMONFACTURX_ENDPOINT_SCHEME` (défaut `0225`), pour les PA attendant un autre code ISO 6523 (`0002` SIREN / `0009` SIRET).
+- **Repli email** : pour un tiers sans SIREN (étranger, hors périmètre de la réforme), l'email (`schemeID="EM"`) reste utilisé — aucun bloc vide émis.
+- **Diagnostic** : BT-34/BT-49 sont considérés satisfaits par le SIREN *ou* l'email ; un acheteur français sans SIREN/SIRET est signalé (non routable sur le réseau PA, même avec un email).
+
+Le `<ram:SpecifiedLegalOrganization>` (identifiant légal BT-30/BT-47) reste en `schemeID="0002"` : c'est un champ d'*identification* distinct de l'*adressage*, inchangé. Aucune migration nécessaire ; vérifier que le SIRET/SIREN des tiers acheteurs est bien renseigné dans Dolibarr.
+
 ### 2.0.2 (mai 2026)
 
 Deux correctifs de robustesse Windows + auto-entreprise (franchise en base TVA) :

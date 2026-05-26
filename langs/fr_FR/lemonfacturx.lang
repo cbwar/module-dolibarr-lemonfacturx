@@ -8,6 +8,11 @@ LemonFacturXPaymentMeans = Moyen de paiement par défaut
 PaymentMeans30 = Virement bancaire
 PaymentMeans58 = Prélèvement SEPA
 PaymentMeans49 = Prélèvement direct
+LemonFacturXEndpointScheme = Schéma d'adressage (endpoint BT-34/BT-49)
+LemonFacturXEndpointSchemeHint = Code du schéma de l'adresse électronique de routage (URIID). 0225 = SIREN dans l'annuaire PPF (réseau des Plateformes Agréées, défaut conforme à la réforme FR). 0002/0009 = SIREN/SIRET ISO 6523 si votre PA l'exige. Pour un tiers sans SIREN (étranger), l'email est utilisé automatiquement.
+EndpointScheme0225 = SIREN (annuaire PPF, réforme FR)
+EndpointScheme0002 = SIREN (ISO 6523)
+EndpointScheme0009 = SIRET (ISO 6523)
 LemonFacturXInfo = Les factures PDF générées seront automatiquement converties au format Factur-X EN16931 (PDF/A-3 avec XML CrossIndustryInvoice embarqué). L'IBAN et le BIC sont lus depuis le compte bancaire sélectionné.
 LemonFacturXDiagTitle = Diagnostic des informations obligatoires
 LemonFacturXDiagResults = Vérification Factur-X EN16931 + règles BR-FR

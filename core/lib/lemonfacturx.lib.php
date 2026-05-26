@@ -322,7 +322,6 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 		'town'      => 'ville de la société émettrice manquante',
 		'tva_intra' => 'numéro de TVA intracommunautaire manquant (société)',
 		'idprof2'   => 'SIRET/SIREN manquant (société) — obligatoire BR-FR-10',
-		'email'     => 'email de la société manquant — obligatoire BR-FR-13 (BT-34)',
 	];
 	$isFranchise = isset($mysoc->tva_assuj) && (int) $mysoc->tva_assuj === 0;
 	foreach ($sellerChecks as $field => $message) {
@@ -333,6 +332,13 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 		if (empty($mysoc->$field)) {
 			$warnings[] = $prefix.$message;
 		}
+	}
+
+	// BT-34 (adresse électronique vendeur) : satisfaite par le SIREN (endpoint 0225)
+	// OU l'email. On n'avertit que si aucune des deux n'est disponible.
+	$sellerSiren = lemonfacturx_extract_siren($mysoc->idprof2 ?? '');
+	if ($sellerSiren === '' && empty($mysoc->email)) {
+		$warnings[] = $prefix.'adresse électronique de la société émettrice manquante (ni SIREN/SIRET, ni email) — obligatoire BR-FR-13 (BT-34)';
 	}
 
 	$buyer = $invoice->thirdparty;
@@ -348,8 +354,16 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 		}
 	}
 
-	if (lemonfacturx_get_buyer_email($buyer, $invoice->db) === '') {
-		$warnings[] = $prefix.'email du tiers acheteur manquant (ni sur la fiche tiers, ni sur ses contacts) — obligatoire BR-FR-12 (BT-49)';
+	// BT-49 (adresse électronique acheteur) : satisfaite par le SIREN (endpoint 0225)
+	// OU l'email. Pour un acheteur FR, l'absence de SIREN empêche le routage PA/PDP,
+	// même si un email est présent (un email n'est pas routable sur le réseau).
+	$buyerSiren = lemonfacturx_extract_siren($buyer->idprof2 ?? '');
+	$buyerEmail = lemonfacturx_get_buyer_email($buyer, $invoice->db);
+	$buyerIsFR  = strtoupper(!empty($buyer->country_code) ? $buyer->country_code : 'FR') === 'FR';
+	if ($buyerSiren === '' && $buyerEmail === '') {
+		$warnings[] = $prefix.'adresse électronique du tiers acheteur manquante (ni SIREN/SIRET, ni email) — obligatoire BR-FR-12 (BT-49)';
+	} elseif ($buyerSiren === '' && $buyerIsFR) {
+		$warnings[] = $prefix.'SIREN/SIRET du tiers acheteur manquant — requis pour le routage sur le réseau des Plateformes Agréées (endpoint BT-49 schemeID 0225) ; une adresse email seule n\'est pas routable';
 	}
 
 	if (getDolGlobalInt('LEMONFACTURX_BANK_ACCOUNT') <= 0) {
@@ -386,13 +400,10 @@ function lemonfacturx_build_trade_party_xml($role, $party, $email)
 	$xml .= '        <ram:CityName>'.xmlEncode($party->town ?? '').'</ram:CityName>'."\n";
 	$xml .= '        <ram:CountryID>'.xmlEncode($country).'</ram:CountryID>'."\n";
 	$xml .= '      </ram:PostalTradeAddress>'."\n";
-	// BR-FR-13 / BT-49 : n'émettre le bloc URI que si l'email est réellement renseigné.
-	// Sinon le XML contient une URIID vide qui est rejetée par certains validateurs.
-	if (!empty($email)) {
-		$xml .= '      <ram:URIUniversalCommunication>'."\n";
-		$xml .= '        <ram:URIID schemeID="EM">'.xmlEncode($email).'</ram:URIID>'."\n";
-		$xml .= '      </ram:URIUniversalCommunication>'."\n";
-	}
+	// BT-34 (vendeur) / BT-49 (acheteur) : adresse électronique de routage.
+	// Le réseau des Plateformes Agréées (réforme FR) route par SIREN ; l'endpoint
+	// porte donc le SIREN avec schemeID="0225" (annuaire PPF), pas l'email.
+	$xml .= lemonfacturx_build_endpoint_uri($siren, $email);
 	if (!empty($vat)) {
 		$xml .= '      <ram:SpecifiedTaxRegistration>'."\n";
 		$xml .= '        <ram:ID schemeID="VA">'.xmlEncode($vat).'</ram:ID>'."\n";
@@ -408,6 +419,39 @@ function lemonfacturx_build_trade_party_xml($role, $party, $email)
 		$xml .= '      </ram:SpecifiedTaxRegistration>'."\n";
 	}
 	$xml .= '    </ram:'.$tag.'>'."\n";
+
+	return $xml;
+}
+
+/**
+ * Construit l'endpoint d'adressage électronique (BT-34 vendeur / BT-49 acheteur).
+ *
+ * Le réseau des Plateformes Agréées (réforme française) route les factures par
+ * SIREN : l'adresse doit porter le SIREN avec schemeID="0225" (annuaire PPF,
+ * XP Z12-012). Surchargeable via LEMONFACTURX_ENDPOINT_SCHEME pour une PA qui
+ * attendrait un autre code ISO 6523 (0002 SIREN / 0009 SIRET). Sans SIREN (tiers
+ * étranger hors périmètre), repli sur l'email (schemeID="EM"). Renvoie une chaîne
+ * vide si aucune adresse n'est disponible, pour ne pas émettre de bloc vide.
+ *
+ * @param string $siren SIREN 9 chiffres (vide si absent)
+ * @param string $email Email de repli
+ * @return string Bloc <ram:URIUniversalCommunication> ou chaîne vide
+ */
+function lemonfacturx_build_endpoint_uri($siren, $email)
+{
+	if (!empty($siren)) {
+		$scheme = getDolGlobalString('LEMONFACTURX_ENDPOINT_SCHEME', '0225');
+		$value  = $siren;
+	} elseif (!empty($email)) {
+		$scheme = 'EM';
+		$value  = $email;
+	} else {
+		return '';
+	}
+
+	$xml  = '      <ram:URIUniversalCommunication>'."\n";
+	$xml .= '        <ram:URIID schemeID="'.xmlEncode($scheme).'">'.xmlEncode($value).'</ram:URIID>'."\n";
+	$xml .= '      </ram:URIUniversalCommunication>'."\n";
 
 	return $xml;
 }
