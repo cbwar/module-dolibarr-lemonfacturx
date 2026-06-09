@@ -18,6 +18,12 @@
  * Prérequis : Dolibarr de démo avec fixtures.php exécuté (ids 1 à 10 = F001..F010).
  */
 
+// Sécurité : exécution CLI uniquement.
+if (PHP_SAPI !== 'cli') {
+	http_response_code(403);
+	die('CLI only');
+}
+
 // Localisation de master.inc.php : 2 niveaux au-dessus du module, ou DOL_DOCUMENT_ROOT
 $candidates = [
 	__DIR__.'/../../../master.inc.php',
@@ -46,7 +52,9 @@ $cases = [
 	1  => ['ref' => 'F001 standard FR 20%',    'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 1200.00],
 	2  => ['ref' => 'F002 multi-TVA 20% + 5,5%','typeCode' => '380','mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 1727.50],
 	3  => ['ref' => 'F003 TVA 0% franchise',   'typeCode' => '380', 'mainCategory' => 'E',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => true,  'prepaid' => null, 'due' => 500.00],
-	4  => ['ref' => 'F004 avoir',              'typeCode' => '381', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 0.00],
+	// Avoir : depuis la v3.0.0, montants émis en POSITIF (BR-27) et
+	// DuePayableAmount = GrandTotal sans écrêtage (BR-CO-16) → 1200.00
+	4  => ['ref' => 'F004 avoir',              'typeCode' => '381', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 1200.00],
 	5  => ['ref' => 'F005 ligne en heures',    'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'HUR', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 960.00],
 	6  => ['ref' => 'F006 ligne en jours',     'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'DAY', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 2700.00],
 	7  => ['ref' => 'F007 buyer sans email',   'typeCode' => '380', 'mainCategory' => 'S',  'unitCode' => 'C62', 'buyerUri' => true,  'buyerUriScheme' => '0225', 'exemption' => false, 'prepaid' => null, 'due' => 600.00],

@@ -10,6 +10,12 @@
  * Usage : php /var/www/dolibarr/htdocs/custom/lemonfacturx/demo/fixtures.php
  */
 
+// Sécurité : ce script crée un compte admin de démo — exécution CLI uniquement.
+if (PHP_SAPI !== 'cli') {
+	http_response_code(403);
+	die('CLI only');
+}
+
 $res = @include "/var/www/dolibarr/htdocs/master.inc.php";
 if (!$res) {
 	die("Impossible de charger master.inc.php\n");
