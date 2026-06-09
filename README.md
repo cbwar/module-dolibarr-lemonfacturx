@@ -1,6 +1,6 @@
 # LemonFacturX
 
-**Version 1.1.1** — Module Dolibarr pour la génération automatique de factures **Factur-X EN16931** (PDF/A-3 avec XML CrossIndustryInvoice embarqué).
+**Version 2.1.2** — Module Dolibarr pour la génération automatique de factures **Factur-X EN16931** (PDF/A-3 avec XML CrossIndustryInvoice embarqué).
 
 Chaque facture client générée dans Dolibarr est automatiquement convertie au format Factur-X, conforme aux règles **BR-FR** (norme XP Z12-012 V1.2.0) pour la facturation électronique française.
 
