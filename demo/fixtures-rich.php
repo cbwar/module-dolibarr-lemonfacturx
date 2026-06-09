@@ -14,6 +14,12 @@
  * des entités. Les 6 tiers et 10 factures créés par fixtures.php restent.
  */
 
+// Sécurité : script de démo modifiant la base — exécution CLI uniquement.
+if (PHP_SAPI !== 'cli') {
+	http_response_code(403);
+	die('CLI only');
+}
+
 mt_srand(42); // graine fixe : reproductible
 
 $res = @include "/var/www/dolibarr/htdocs/master.inc.php";

@@ -51,8 +51,13 @@ if ($action == 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 		['LEMONFACTURX_BANK_ACCOUNT', GETPOSTINT('LEMONFACTURX_BANK_ACCOUNT'),    'int'],
 		['LEMONFACTURX_PAYMENT_MEANS',trim(GETPOST('LEMONFACTURX_PAYMENT_MEANS', 'alpha')), 'chaine'],
 		['LEMONFACTURX_ENDPOINT_SCHEME',trim(GETPOST('LEMONFACTURX_ENDPOINT_SCHEME', 'alpha')), 'chaine'],
+		['LEMONFACTURX_LEGAL_ID_SCHEME',trim(GETPOST('LEMONFACTURX_LEGAL_ID_SCHEME', 'alpha')), 'chaine'],
+		['LEMONFACTURX_VAT_DUE_DATE_TYPE',trim(GETPOST('LEMONFACTURX_VAT_DUE_DATE_TYPE', 'alpha')), 'chaine'],
+		['LEMONFACTURX_BT23_PROCESS', trim(GETPOST('LEMONFACTURX_BT23_PROCESS', 'alphanohtml')), 'chaine'],
 		['LEMONFACTURX_STRICT_MODE',  GETPOSTINT('LEMONFACTURX_STRICT_MODE'),     'int'],
+		['LEMONFACTURX_BR_CHECK',     GETPOSTINT('LEMONFACTURX_BR_CHECK'),        'int'],
 		['LEMONFACTURX_PHP_CLI_PATH', trim(GETPOST('LEMONFACTURX_PHP_CLI_PATH', 'alphanohtml')), 'chaine'],
+		['LEMONFACTURX_VERAPDF_PATH', trim(GETPOST('LEMONFACTURX_VERAPDF_PATH', 'alphanohtml')), 'chaine'],
 		['LEMONFACTURX_NOTE_PMD',     trim(GETPOST('LEMONFACTURX_NOTE_PMD', 'restricthtml')),    'chaine'],
 		['LEMONFACTURX_NOTE_PMT',     trim(GETPOST('LEMONFACTURX_NOTE_PMT', 'restricthtml')),    'chaine'],
 		['LEMONFACTURX_NOTE_AAB',     trim(GETPOST('LEMONFACTURX_NOTE_AAB', 'restricthtml')),    'chaine'],
@@ -114,7 +119,7 @@ print '<tr class="oddeven">';
 print '<td>'.$langs->trans("LemonFacturXBankAccount").'</td>';
 print '<td>';
 $currentBankAccount = getDolGlobalInt('LEMONFACTURX_BANK_ACCOUNT');
-$sql = "SELECT rowid, label, iban_prefix, bic FROM ".MAIN_DB_PREFIX."bank_account WHERE clos = 0 AND entity = ".$conf->entity." ORDER BY label";
+$sql = "SELECT rowid, label, iban_prefix, bic FROM ".MAIN_DB_PREFIX."bank_account WHERE clos = 0 AND entity IN (".getEntity('bank_account').") ORDER BY label";
 $resql = $db->query($sql);
 print '<select name="LEMONFACTURX_BANK_ACCOUNT" class="flat minwidth300">';
 print '<option value="0">-- '.$langs->trans("Select").' --</option>';
@@ -138,8 +143,74 @@ $currentMeans = getDolGlobalString('LEMONFACTURX_PAYMENT_MEANS', '30');
 print '<select name="LEMONFACTURX_PAYMENT_MEANS" class="flat">';
 print '<option value="30"'.($currentMeans == '30' ? ' selected' : '').'>30 - '.$langs->trans("PaymentMeans30").'</option>';
 print '<option value="58"'.($currentMeans == '58' ? ' selected' : '').'>58 - '.$langs->trans("PaymentMeans58").'</option>';
+print '<option value="59"'.($currentMeans == '59' ? ' selected' : '').'>59 - '.$langs->trans("PaymentMeans59").'</option>';
 print '<option value="49"'.($currentMeans == '49' ? ' selected' : '').'>49 - '.$langs->trans("PaymentMeans49").'</option>';
 print '</select>';
+print '<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXPaymentMeansHint").'</span>';
+print '</td>';
+print '</tr>';
+
+// Identifiant légal BT-30 / BT-47
+print '<tr class="oddeven">';
+print '<td>'.$langs->trans("LemonFacturXLegalIdScheme");
+print '<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXLegalIdSchemeHint").'</span>';
+print '</td>';
+print '<td>';
+$legalScheme = getDolGlobalString('LEMONFACTURX_LEGAL_ID_SCHEME', 'siret0009');
+print '<select name="LEMONFACTURX_LEGAL_ID_SCHEME" class="flat">';
+print '<option value="siret0009"'.($legalScheme == 'siret0009' ? ' selected' : '').'>'.$langs->trans("LegalIdSchemeSiret0009").'</option>';
+print '<option value="siren0002"'.($legalScheme == 'siren0002' ? ' selected' : '').'>'.$langs->trans("LegalIdSchemeSiren0002").'</option>';
+print '<option value="siret0002"'.($legalScheme == 'siret0002' ? ' selected' : '').'>'.$langs->trans("LegalIdSchemeSiret0002").'</option>';
+print '</select>';
+print '</td>';
+print '</tr>';
+
+// BT-8 : exigibilité de la TVA (débits / encaissements)
+print '<tr class="oddeven">';
+print '<td>'.$langs->trans("LemonFacturXVatDueDateType");
+print '<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXVatDueDateTypeHint").'</span>';
+print '</td>';
+print '<td>';
+$dueType = getDolGlobalString('LEMONFACTURX_VAT_DUE_DATE_TYPE', '');
+print '<select name="LEMONFACTURX_VAT_DUE_DATE_TYPE" class="flat">';
+print '<option value=""'.($dueType == '' ? ' selected' : '').'>'.$langs->trans("VatDueDateTypeNone").'</option>';
+print '<option value="72"'.($dueType == '72' ? ' selected' : '').'>72 - '.$langs->trans("VatDueDateType72").'</option>';
+print '<option value="5"'.($dueType == '5' ? ' selected' : '').'>5 - '.$langs->trans("VatDueDateType5").'</option>';
+print '</select>';
+print '</td>';
+print '</tr>';
+
+// BT-23 : cadre de facturation
+print '<tr class="oddeven">';
+print '<td>'.$langs->trans("LemonFacturXBt23Process");
+print '<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXBt23ProcessHint").'</span>';
+print '</td>';
+print '<td>';
+print '<input type="text" name="LEMONFACTURX_BT23_PROCESS" class="flat minwidth100" value="'.dol_escape_htmltag(getDolGlobalString('LEMONFACTURX_BT23_PROCESS', '')).'" placeholder="A1, B1, S1...">';
+print '</td>';
+print '</tr>';
+
+// Contrôle interne des règles métier EN16931
+print '<tr class="oddeven">';
+print '<td>'.$langs->trans("LemonFacturXBrCheck");
+print '<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXBrCheckHint").'</span>';
+print '</td>';
+print '<td>';
+$brCheck = getDolGlobalInt('LEMONFACTURX_BR_CHECK', 1);
+print '<select name="LEMONFACTURX_BR_CHECK" class="flat">';
+print '<option value="1"'.($brCheck ? ' selected' : '').'>'.$langs->trans("Yes").'</option>';
+print '<option value="0"'.(!$brCheck ? ' selected' : '').'>'.$langs->trans("No").'</option>';
+print '</select>';
+print '</td>';
+print '</tr>';
+
+// Chemin veraPDF (post-validation PDF/A-3 optionnelle)
+print '<tr class="oddeven">';
+print '<td>'.$langs->trans("LemonFacturXVeraPdfPath");
+print '<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXVeraPdfPathHint").'</span>';
+print '</td>';
+print '<td>';
+print '<input type="text" name="LEMONFACTURX_VERAPDF_PATH" class="flat minwidth300" value="'.dol_escape_htmltag(getDolGlobalString('LEMONFACTURX_VERAPDF_PATH', '')).'" placeholder="/usr/local/bin/verapdf">';
 print '</td>';
 print '</tr>';
 
@@ -279,9 +350,39 @@ if ($bankId <= 0) {
 	if ($bankCheck->fetch($bankId) <= 0) {
 		$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagBankNotFound"), 'fix' => $bankFixUrl];
 	} else {
-		$diagCheck('LemonFacturXDiagIBAN', $bankCheck->iban, lemonfacturx_iban_short($bankCheck->iban), '', $bankFixUrl);
+		$diagCheck('LemonFacturXDiagIBAN', $bankCheck->iban, dol_escape_htmltag(lemonfacturx_iban_short($bankCheck->iban)), '', $bankFixUrl);
 		$diagCheck('LemonFacturXDiagBIC', $bankCheck->bic, null, '', $bankFixUrl);
 	}
+}
+
+// PDF/A-3 : police embarquée forcée (sinon veraPDF échoue sur les polices base-14)
+$forceFont = getDolGlobalString('MAIN_PDF_FORCE_FONT', '');
+if ($forceFont === '') {
+	$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagForceFontMissing"), 'fix' => '/admin/const.php'];
+} else {
+	$diagOk[] = $langs->trans("LemonFacturXDiagForceFontOk").' : '.dol_escape_htmltag($forceFont);
+}
+
+// exec() requis pour le subprocess d'injection
+if (!function_exists('exec')) {
+	$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagExecDisabled"), 'fix' => '/admin/modules.php'];
+} else {
+	$diagOk[] = $langs->trans("LemonFacturXDiagExecEnabled");
+}
+
+// Binaire PHP CLI configuré : si chemin absolu, vérifier qu'il est exécutable
+$phpCliPath = getDolGlobalString('LEMONFACTURX_PHP_CLI_PATH', 'php');
+if (strpos($phpCliPath, '/') !== false || strpos($phpCliPath, '\\') !== false) {
+	if (is_executable($phpCliPath)) {
+		$diagOk[] = $langs->trans("LemonFacturXDiagPhpCliOk").' : '.dol_escape_htmltag($phpCliPath);
+	} else {
+		$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagPhpCliNotFound", dol_escape_htmltag($phpCliPath)), 'fix' => '/custom/lemonfacturx/admin/setup.php'];
+	}
+}
+
+// Multidevise : avertissement informatif (les factures en devise étrangère sont ignorées)
+if (isModEnabled('multicurrency')) {
+	$diagOk[] = $langs->trans("LemonFacturXDiagMulticurrencyNote");
 }
 
 print '<table class="noborder centpercent">';

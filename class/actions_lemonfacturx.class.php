@@ -7,7 +7,11 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * Hook afterPDFCreation — injecte un XML Factur-X EN16931 dans les PDF factures clients
+ * Hooks LemonFacturX :
+ *  - afterPDFCreation (contexte pdfgeneration) : injecte le XML Factur-X EN16931
+ *    dans les PDF factures clients
+ *  - addMoreActionsButtons / doActions (contexte invoicecard) : boutons
+ *    "Vérifier Factur-X" et "Régénérer Factur-X" sur la fiche facture
  */
 
 class ActionsLemonFacturX
@@ -31,14 +35,14 @@ class ActionsLemonFacturX
 	 */
 	public function afterPDFCreation($parameters, &$object, &$action, $hookmanager)
 	{
-		global $mysoc;
+		global $mysoc, $langs;
 
 		if (!getDolGlobalInt('LEMONFACTURX_ENABLED')) {
 			return 0;
 		}
 
 		$invoice = $parameters['object'] ?? null;
-		if (!is_object($invoice) || get_class($invoice) !== 'Facture') {
+		if (!is_object($invoice) || !($invoice instanceof Facture)) {
 			return 0;
 		}
 
@@ -47,32 +51,67 @@ class ActionsLemonFacturX
 			return 0;
 		}
 
+		$modulePath = dirname(__DIR__);
+		require_once $modulePath.'/core/lib/lemonfacturx.lib.php';
+		require_once $modulePath.'/core/lib/lemonfacturx_rules.php';
+		if (is_object($langs)) {
+			$langs->loadLangs(['lemonfacturx@lemonfacturx']);
+		}
+
+		$strict = (int) getDolGlobalInt('LEMONFACTURX_STRICT_MODE', 0);
+
 		if (empty($invoice->thirdparty) || !is_object($invoice->thirdparty)) {
 			$invoice->fetch_thirdparty();
+		}
+		if (empty($invoice->thirdparty) || !is_object($invoice->thirdparty)) {
+			return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrNoThirdparty'), $strict);
+		}
+		if (empty($mysoc) || !is_object($mysoc) || empty($mysoc->name)) {
+			return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrNoMysoc'), $strict);
 		}
 		if (empty($invoice->lines)) {
 			$invoice->fetch_lines();
 		}
 
-		$modulePath = dirname(__DIR__);
-		require_once $modulePath.'/core/lib/lemonfacturx.lib.php';
-
-		$strict = (int) getDolGlobalInt('LEMONFACTURX_STRICT_MODE', 0);
+		// Périmètre supporté (multidevise, date manquante...) : on refuse
+		// proprement plutôt que d'émettre un XML divergent du PDF visible.
+		$unsupported = lemonfacturx_check_supported($invoice);
+		if ($unsupported !== null) {
+			return $this->handleNonFatal('LemonFacturX: '.$unsupported, $strict, lemonfacturx_trans('LemonFacturXHintPdfKept'));
+		}
 
 		// Vérifier les infos obligatoires (on continue même si incomplet en best-effort).
 		// Les warnings ne sont PAS affichés individuellement : ils sont consolidés
 		// dans le message final (vert si aucun, orange avec la liste si présents).
 		$warnings = lemonfacturx_check_mandatory($invoice, $mysoc);
+
+		$buildWarnings = [];
+		$xml = lemonfacturx_build_xml($invoice, $mysoc, $buildWarnings);
+		$warnings = array_merge($warnings, $buildWarnings);
+
 		foreach ($warnings as $w) {
 			dol_syslog('LemonFacturX WARNING: '.$w, LOG_WARNING);
 		}
 
-		$xml = lemonfacturx_build_xml($invoice, $mysoc);
-
 		// Validation interne avant injection : well-formed + XSD EN16931
 		$validationError = $this->validateXml($xml, $modulePath);
 		if ($validationError !== null) {
-			return $this->handleNonFatal('LemonFacturX: XML invalide : '.$validationError, $strict, 'PDF classique conservé sans Factur-X');
+			return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrInvalidXml').' : '.$validationError, $strict, lemonfacturx_trans('LemonFacturXHintPdfKept'));
+		}
+
+		// Contrôle des règles métier EN16931 (sous-ensemble Schematron) :
+		// bloquant en mode strict, consolidé dans les warnings sinon.
+		if (getDolGlobalInt('LEMONFACTURX_BR_CHECK', 1)) {
+			$brViolations = lemonfacturx_validate_business_rules($xml);
+			if (!empty($brViolations)) {
+				if ($strict) {
+					return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrBrViolations').' — '.implode(' ; ', $brViolations), $strict);
+				}
+				foreach ($brViolations as $v) {
+					dol_syslog('LemonFacturX BR: '.$v, LOG_WARNING);
+					$warnings[] = lemonfacturx_trans('LemonFacturXWarnBrPrefix').' '.$v;
+				}
+			}
 		}
 
 		// Écrire le XML dans un fichier temporaire pour le subprocess d'injection.
@@ -82,11 +121,19 @@ class ActionsLemonFacturX
 		$xmlTempDir = DOL_DATA_ROOT.'/facturx/temp';
 		dol_mkdir($xmlTempDir);
 		$this->xmlTmpFile = tempnam($xmlTempDir, 'facturx_');
-		file_put_contents($this->xmlTmpFile, $xml);
+		if ($this->xmlTmpFile === false) {
+			$this->xmlTmpFile = null;
+			return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrTempDir', $xmlTempDir), $strict);
+		}
+		if (file_put_contents($this->xmlTmpFile, $xml) === false) {
+			@unlink($this->xmlTmpFile);
+			$this->xmlTmpFile = null;
+			return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrTempWrite', $xmlTempDir), $strict);
+		}
 
 		try {
 			if (!function_exists('exec')) {
-				return $this->handleNonFatal('LemonFacturX: la fonction exec() est désactivée sur ce serveur', $strict);
+				return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrNoExec'), $strict);
 			}
 
 			$phpBin = $this->resolvePhpBinary($strict);
@@ -106,7 +153,15 @@ class ActionsLemonFacturX
 			exec($cmd, $output, $returnCode);
 
 			if ($returnCode !== 0) {
-				return $this->handleNonFatal('LemonFacturX: injection PDF échouée : '.implode(' ', $output), $strict);
+				// On tronque la sortie brute du subprocess (chemins serveur)
+				$detail = dol_trunc(implode(' ', $output), 300);
+				return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrInjectFailed').' : '.$detail, $strict);
+			}
+
+			// Post-validation PDF/A-3 optionnelle via veraPDF (non bloquante)
+			$veraWarning = $this->runVeraPdf($file);
+			if ($veraWarning !== null) {
+				$warnings[] = $veraWarning;
 			}
 
 			dol_syslog('LemonFacturX: PDF Factur-X généré pour '.$invoice->ref, LOG_INFO);
@@ -118,6 +173,227 @@ class ActionsLemonFacturX
 				$this->xmlTmpFile = null;
 			}
 		}
+	}
+
+	/**
+	 * Hook addMoreActionsButtons — contexte invoicecard.
+	 * Ajoute les boutons "Vérifier Factur-X" / "Régénérer Factur-X" sur la fiche facture.
+	 */
+	public function addMoreActionsButtons($parameters, &$object, &$action, $hookmanager)
+	{
+		global $user, $langs;
+
+		if (!getDolGlobalInt('LEMONFACTURX_ENABLED')) {
+			return 0;
+		}
+		$contexts = explode(':', $parameters['context'] ?? '');
+		if (!in_array('invoicecard', $contexts, true)) {
+			return 0;
+		}
+		if (!is_object($object) || !($object instanceof Facture)) {
+			return 0;
+		}
+		$status = (int) ($object->status ?? $object->statut ?? 0);
+		if ($status < 1) {
+			return 0; // brouillon : pas encore de PDF définitif
+		}
+		if (is_object($langs)) {
+			$langs->loadLangs(['lemonfacturx@lemonfacturx']);
+		}
+
+		$url = $_SERVER['PHP_SELF'].'?facid='.((int) $object->id).'&token='.newToken();
+		if ($this->userCanRead($user)) {
+			print '<a class="butAction" href="'.dol_escape_htmltag($url.'&action=lemonfacturx_verify').'">'.$langs->trans('LemonFacturXBtnVerify').'</a>';
+		}
+		if ($this->userCanWrite($user)) {
+			print '<a class="butAction" href="'.dol_escape_htmltag($url.'&action=lemonfacturx_regenerate').'">'.$langs->trans('LemonFacturXBtnRegenerate').'</a>';
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Hook doActions — contexte invoicecard.
+	 * Traite les actions lemonfacturx_verify / lemonfacturx_regenerate.
+	 */
+	public function doActions($parameters, &$object, &$action, $hookmanager)
+	{
+		global $conf, $user, $langs, $mysoc;
+
+		if (!getDolGlobalInt('LEMONFACTURX_ENABLED')) {
+			return 0;
+		}
+		$contexts = explode(':', $parameters['context'] ?? '');
+		if (!in_array('invoicecard', $contexts, true)) {
+			return 0;
+		}
+		if (!in_array($action, ['lemonfacturx_verify', 'lemonfacturx_regenerate'], true)) {
+			return 0;
+		}
+		if (!is_object($object) || !($object instanceof Facture) || empty($object->id)) {
+			return 0;
+		}
+		if (GETPOST('token', 'alpha') !== currentToken()) {
+			setEventMessages('Bad value for CSRF token', null, 'errors');
+			return 0;
+		}
+		if (is_object($langs)) {
+			$langs->loadLangs(['lemonfacturx@lemonfacturx']);
+		}
+
+		if ($action === 'lemonfacturx_regenerate') {
+			if (!$this->userCanWrite($user)) {
+				setEventMessages($langs->trans('NotEnoughPermissions'), null, 'errors');
+				return 0;
+			}
+			// La régénération du PDF re-déclenche afterPDFCreation (et donc
+			// l'injection Factur-X) : c'est le chemin nominal du module.
+			// Mêmes conventions que l'action builddoc du cœur : langue du tiers
+			// (MAIN_MULTILANGS) et flags de masquage, pour ne pas écraser le PDF
+			// client avec une version dans la langue de l'agent.
+			$model = !empty($object->model_pdf) ? $object->model_pdf : getDolGlobalString('FACTURE_ADDON_PDF', 'sponge');
+			if (empty($object->thirdparty) || !is_object($object->thirdparty)) {
+				$object->fetch_thirdparty();
+			}
+			$outputlangs = $langs;
+			if (getDolGlobalInt('MAIN_MULTILANGS') && !empty($object->thirdparty->default_lang)) {
+				$outputlangs = new Translate('', $conf);
+				$outputlangs->setDefaultLang($object->thirdparty->default_lang);
+			}
+			$hidedetails = getDolGlobalInt('MAIN_GENERATE_DOCUMENTS_HIDE_DETAILS');
+			$hidedesc = getDolGlobalInt('MAIN_GENERATE_DOCUMENTS_HIDE_DESC');
+			$hideref = getDolGlobalInt('MAIN_GENERATE_DOCUMENTS_HIDE_REF');
+			$res = $object->generateDocument($model, $outputlangs, $hidedetails, $hidedesc, $hideref);
+			if ($res <= 0) {
+				setEventMessages($langs->trans('LemonFacturXMsgRegenerateFailed').' : '.$object->error, null, 'errors');
+			}
+			// Les messages de succès/avertissement sont émis par afterPDFCreation
+			$action = '';
+			return 0;
+		}
+
+		// lemonfacturx_verify : extraire le XML embarqué du PDF et le re-valider
+		if (!$this->userCanRead($user)) {
+			setEventMessages($langs->trans('NotEnoughPermissions'), null, 'errors');
+			return 0;
+		}
+		$this->verifyInvoicePdf($object);
+		$action = '';
+		return 0;
+	}
+
+	/**
+	 * Vérifie le PDF de la facture : présence d'un XML Factur-X embarqué,
+	 * validation XSD + règles métier. Affiche le résultat en event message.
+	 */
+	protected function verifyInvoicePdf($invoice)
+	{
+		global $conf, $langs;
+
+		$modulePath = dirname(__DIR__);
+		require_once $modulePath.'/core/lib/lemonfacturx.lib.php';
+		require_once $modulePath.'/core/lib/lemonfacturx_rules.php';
+
+		$pdfPath = $this->getInvoicePdfPath($invoice);
+		if ($pdfPath === null) {
+			setEventMessages($langs->trans('LemonFacturXMsgNoPdf'), null, 'warnings');
+			return;
+		}
+
+		$xml = lemonfacturx_extract_xml_from_pdf($pdfPath);
+		if ($xml === null) {
+			setEventMessages($langs->trans('LemonFacturXMsgNoFacturX', basename($pdfPath)), null, 'warnings');
+			return;
+		}
+
+		$problems = [];
+		$xsdError = $this->validateXml($xml, $modulePath);
+		if ($xsdError !== null) {
+			$problems[] = 'XSD : '.$xsdError;
+		}
+		if (getDolGlobalInt('LEMONFACTURX_BR_CHECK', 1)) {
+			$problems = array_merge($problems, lemonfacturx_validate_business_rules($xml));
+		}
+
+		if (empty($problems)) {
+			setEventMessages($langs->trans('LemonFacturXMsgVerifyOk', basename($pdfPath)), null, 'mesgs');
+			return;
+		}
+		$msg = $langs->trans('LemonFacturXMsgVerifyKo', basename($pdfPath)).'<br><ul style="margin:4px 0 0 0;padding-left:20px;">';
+		foreach ($problems as $p) {
+			$msg .= '<li>'.dol_escape_htmltag($p).'</li>';
+		}
+		$msg .= '</ul>';
+		setEventMessages($msg, null, 'warnings');
+	}
+
+	/**
+	 * Chemin du PDF principal de la facture, ou null s'il n'existe pas.
+	 */
+	protected function getInvoicePdfPath($invoice)
+	{
+		global $conf;
+
+		$entity = $invoice->entity ?? $conf->entity;
+		return lemonfacturx_invoice_pdf_path($invoice->ref, $entity, (string) ($invoice->last_main_doc ?? ''));
+	}
+
+	/**
+	 * Post-validation PDF/A-3 via veraPDF si LEMONFACTURX_VERAPDF_PATH est
+	 * configuré. Renvoie un warning à afficher, ou null si OK / non configuré.
+	 */
+	protected function runVeraPdf($pdfFile)
+	{
+		global $langs;
+
+		$veraPath = trim(getDolGlobalString('LEMONFACTURX_VERAPDF_PATH', ''));
+		if ($veraPath === '' || !function_exists('exec')) {
+			return null;
+		}
+		if (!is_executable($veraPath)) {
+			return lemonfacturx_trans('LemonFacturXWarnVeraPdfNotFound', $veraPath);
+		}
+
+		$cmd = escapeshellarg($veraPath).' -f 3b --format text '.escapeshellarg($pdfFile).' 2>&1';
+		// veraPDF est une CLI JVM : borne de 60s pour qu'un process bloqué ne
+		// gèle pas la requête web (max_execution_time ne compte pas l'exec).
+		if (is_executable('/usr/bin/timeout')) {
+			$cmd = '/usr/bin/timeout 60 '.$cmd;
+		}
+		$output = [];
+		$returnCode = 0;
+		exec($cmd, $output, $returnCode);
+		$text = implode("\n", $output);
+
+		// veraPDF (format text) : "PASS file.pdf" / "FAIL file.pdf"
+		if (strpos($text, 'PASS') === 0 || preg_match('/^PASS\b/m', $text)) {
+			dol_syslog('LemonFacturX: veraPDF PASS pour '.$pdfFile, LOG_INFO);
+			return null;
+		}
+		dol_syslog('LemonFacturX: veraPDF KO pour '.$pdfFile.' : '.dol_trunc($text, 500), LOG_WARNING);
+		return lemonfacturx_trans('LemonFacturXWarnVeraPdfFailed');
+	}
+
+	/**
+	 * Droit de lecture des factures (compatible anciennes/nouvelles versions Dolibarr).
+	 */
+	protected function userCanRead($user)
+	{
+		if (method_exists($user, 'hasRight')) {
+			return (bool) $user->hasRight('facture', 'lire');
+		}
+		return !empty($user->rights->facture->lire);
+	}
+
+	/**
+	 * Droit de création/modification des factures.
+	 */
+	protected function userCanWrite($user)
+	{
+		if (method_exists($user, 'hasRight')) {
+			return (bool) $user->hasRight('facture', 'creer');
+		}
+		return !empty($user->rights->facture->creer);
 	}
 
 	/**
@@ -136,10 +412,11 @@ class ActionsLemonFacturX
 		// valeur piégée finit en "command not found"), mais on refuse explicitement
 		// les valeurs avec caractères exotiques pour éviter les fautes de frappe
 		// qui partiraient en boucle d'erreur et pour afficher un message clair.
-		// `:`, `\`, `(`, `)` autorisés pour les chemins Windows (ex C:\dolibarr\bin\php\php7.4.26).
-		if (!preg_match('#^[A-Za-z0-9/._:()\\\\-]+$#', $phpBin)) {
+		// `:`, `\`, `(`, `)`, espace autorisés pour les chemins Windows
+		// (ex C:\Program Files\php\php.exe).
+		if (!preg_match('#^[A-Za-z0-9/._:() \\\\-]+$#', $phpBin)) {
 			dol_syslog('LemonFacturX: LEMONFACTURX_PHP_CLI_PATH valeur reçue : '.$phpBin, LOG_ERR);
-			$this->handleNonFatal('LemonFacturX: LEMONFACTURX_PHP_CLI_PATH contient des caractères interdits (attendu : chemin alphanumérique, « / . _ - : ( ) \\ »)', $strict);
+			$this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrPhpCliChars'), $strict);
 			return null;
 		}
 
@@ -147,7 +424,7 @@ class ActionsLemonFacturX
 		// vers un exécutable. Cas relatif ("php", "php8.2") : on laisse passer
 		// au shell qui résoudra via PATH.
 		if (strpos($phpBin, '/') !== false && !is_executable($phpBin)) {
-			$this->handleNonFatal('LemonFacturX: le binaire PHP configuré est introuvable ou non exécutable : '.$phpBin, $strict);
+			$this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrPhpCliNotFound', $phpBin), $strict);
 			return null;
 		}
 
@@ -162,16 +439,18 @@ class ActionsLemonFacturX
 	 */
 	protected function reportSuccess($invoiceRef, array $warnings)
 	{
-		if (empty($warnings)) {
-			setEventMessages('Facture électronique Factur-X EN16931 embarquée dans le PDF '.$invoiceRef.'.', null, 'mesgs');
+		// Pas de session interactive (API REST, CLI, cron) : log uniquement
+		if (!function_exists('setEventMessages') || (php_sapi_name() === 'cli')) {
 			return;
 		}
 
-		$count  = count($warnings);
-		$plural = ($count > 1) ? 's' : '';
+		$safeRef = dol_escape_htmltag($invoiceRef);
+		if (empty($warnings)) {
+			setEventMessages(lemonfacturx_trans('LemonFacturXMsgSuccess', $safeRef), null, 'mesgs');
+			return;
+		}
 
-		$msg  = 'Facture électronique Factur-X EN16931 embarquée dans le PDF '.$invoiceRef.'. ';
-		$msg .= $count.' avertissement'.$plural.' non bloquant'.$plural.' à corriger pour une conformité totale BR-FR :<br>';
+		$msg  = lemonfacturx_trans('LemonFacturXMsgSuccessWithWarnings', $safeRef, count($warnings)).'<br>';
 		$msg .= '<ul style="margin:4px 0 0 0;padding-left:20px;">';
 		foreach ($warnings as $w) {
 			$msg .= '<li>'.dol_escape_htmltag($w).'</li>';
@@ -185,21 +464,33 @@ class ActionsLemonFacturX
 	 *  - mode strict : remonte une erreur bloquante et renvoie -1
 	 *  - mode best-effort : affiche un warning, laisse le PDF classique en place, renvoie 0
 	 *
+	 * Note : même en mode strict, le PDF classique déjà généré par Dolibarr
+	 * reste sur le disque (le hook intervient après sa création). Le mode
+	 * strict bloque le retour utilisateur, pas l'existence du fichier.
+	 *
 	 * @param string $msg           Message d'erreur (sera loggué + affiché)
 	 * @param int    $strict        0 = best-effort, 1 = strict bloquant
 	 * @param string $fallbackHint  Précision affichée en best-effort entre parenthèses
 	 * @return int                  -1 (strict) ou 0 (best-effort)
 	 */
-	protected function handleNonFatal($msg, $strict, $fallbackHint = 'PDF classique conservé')
+	protected function handleNonFatal($msg, $strict, $fallbackHint = '')
 	{
 		dol_syslog($msg, LOG_ERR);
+		if ($fallbackHint === '') {
+			$fallbackHint = lemonfacturx_trans('LemonFacturXHintPdfKeptShort');
+		}
+		$interactive = function_exists('setEventMessages') && php_sapi_name() !== 'cli';
 		if ($strict) {
 			$this->error = $msg;
 			$this->errors[] = $msg;
-			setEventMessages($msg, null, 'errors');
+			if ($interactive) {
+				setEventMessages($msg, null, 'errors');
+			}
 			return -1;
 		}
-		setEventMessages($msg.' (mode best-effort : '.$fallbackHint.')', null, 'warnings');
+		if ($interactive) {
+			setEventMessages($msg.' ('.lemonfacturx_trans('LemonFacturXHintBestEffort').' : '.$fallbackHint.')', null, 'warnings');
+		}
 		return 0;
 	}
 
@@ -215,41 +506,13 @@ class ActionsLemonFacturX
 	 */
 	protected function validateXml($xml, $modulePath)
 	{
-		if (empty($xml)) {
-			return 'XML vide';
-		}
-
-		libxml_use_internal_errors(true);
-		libxml_clear_errors();
-
-		$dom = new DOMDocument();
-		if (!$dom->loadXML($xml)) {
-			return 'XML mal formé : '.$this->consumeFirstLibxmlError('XML mal formé');
-		}
-
+		// Implémentation partagée avec les suites de tests : les tests valident
+		// le même code que la production (cf. core/lib/lemonfacturx_rules.php).
+		require_once $modulePath.'/core/lib/lemonfacturx_rules.php';
 		$xsdPath = $modulePath.'/vendor/atgp/factur-x/xsd/factur-x/en16931/Factur-X_1.08_EN16931.xsd';
 		if (!file_exists($xsdPath)) {
-			// Absence du XSD embarqué : on ne bloque pas, on a déjà vérifié le well-formed
-			dol_syslog('LemonFacturX: XSD EN16931 absent de vendor/, validation structurelle sautée', LOG_WARNING);
-			libxml_clear_errors();
-			return null;
+			dol_syslog('LemonFacturX: XSD EN16931 absent de vendor/, validation structurelle limitée au well-formed', LOG_WARNING);
 		}
-
-		if (!$dom->schemaValidate($xsdPath)) {
-			return 'non conforme XSD EN16931 : '.$this->consumeFirstLibxmlError('violation de contrainte inconnue');
-		}
-
-		libxml_clear_errors();
-		return null;
-	}
-
-	/**
-	 * Récupère le premier message d'erreur libxml et vide le buffer.
-	 */
-	protected function consumeFirstLibxmlError($fallback)
-	{
-		$errs = libxml_get_errors();
-		libxml_clear_errors();
-		return !empty($errs) ? trim($errs[0]->message) : $fallback;
+		return lemonfacturx_validate_xsd($xml, $modulePath);
 	}
 }
