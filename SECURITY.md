@@ -105,7 +105,6 @@ Toutes les constantes du module sont stockées en clair dans `llx_const` (conven
 | `LEMONFACTURX_BANK_ACCOUNT` | ID du compte bancaire configuré |
 | `LEMONFACTURX_PAYMENT_MEANS` | Code moyen de paiement UNTDID 4461 |
 | `LEMONFACTURX_ENDPOINT_SCHEME` | Schéma d'adressage BT-34/BT-49 (0225/0002/0009) |
-| `LEMONFACTURX_LEGAL_ID_SCHEME` | Identifiant légal BT-30/BT-47 (siret0009/siren0002/siret0002) |
 | `LEMONFACTURX_VAT_DUE_DATE_TYPE` | BT-8 exigibilité TVA (vide/5/72) |
 | `LEMONFACTURX_BT23_PROCESS` | BT-23 cadre de facturation |
 | `LEMONFACTURX_STRICT_MODE` | Politique erreur (best-effort / strict) |
