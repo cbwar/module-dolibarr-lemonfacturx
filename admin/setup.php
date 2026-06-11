@@ -74,6 +74,19 @@ if ($action == 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 }
 
+// Correction en un clic : pose MAIN_PDF_FORCE_FONT = pdfahelvetica (PDF/A-3).
+// Réglage global Dolibarr (toutes les éditions PDF), pas seulement le module.
+if ($action == 'setforcefont') {
+	if (GETPOST('token', 'alpha') !== currentToken()) {
+		accessforbidden('Bad value for CSRF token');
+	}
+	if (dolibarr_set_const($db, 'MAIN_PDF_FORCE_FONT', 'pdfahelvetica', 'chaine', 0, '', $conf->entity) > 0) {
+		setEventMessages($langs->trans("LemonFacturXForceFontSet"), null, 'mesgs');
+	} else {
+		setEventMessages($langs->trans("Error"), null, 'errors');
+	}
+}
+
 // Affichage
 llxHeader('', $langs->trans("LemonFacturXSetup"));
 
@@ -352,7 +365,11 @@ if ($bankId <= 0) {
 // PDF/A-3 : police embarquée forcée (sinon veraPDF échoue sur les polices base-14)
 $forceFont = getDolGlobalString('MAIN_PDF_FORCE_FONT', '');
 if ($forceFont === '') {
-	$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagForceFontMissing"), 'fix' => '/admin/const.php'];
+	$diagErrors[] = [
+		'msg' => $langs->trans("LemonFacturXDiagForceFontMissing"),
+		'fix' => '/custom/lemonfacturx/admin/setup.php?action=setforcefont&token='.newToken(),
+		'fixlabel' => $langs->trans("LemonFacturXDiagFixForceFont"),
+	];
 } else {
 	$diagOk[] = $langs->trans("LemonFacturXDiagForceFontOk").' : '.dol_escape_htmltag($forceFont);
 }
@@ -386,8 +403,9 @@ foreach ($diagOk as $ok) {
 	print '<tr class="oddeven"><td><span style="color: green;">&#10004;</span> '.$ok.'</td><td></td></tr>';
 }
 foreach ($diagErrors as $err) {
+	$fixLabel = !empty($err['fixlabel']) ? $err['fixlabel'] : $langs->trans("LemonFacturXDiagFixLink");
 	print '<tr class="oddeven"><td><span style="color: red;">&#10008;</span> <strong>'.$err['msg'].'</strong></td>';
-	print '<td><a href="'.DOL_URL_ROOT.$err['fix'].'">'.$langs->trans("LemonFacturXDiagFixLink").'</a></td></tr>';
+	print '<td><a href="'.DOL_URL_ROOT.$err['fix'].'">'.$fixLabel.'</a></td></tr>';
 }
 
 if (empty($diagErrors)) {
