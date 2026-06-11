@@ -701,6 +701,31 @@ function lemonfacturx_get_tax_breakdown($prepared, $invoice, $sign = 1.0, &$buil
 }
 
 /**
+ * Vrai si le tiers est hors champ de l'e-invoicing B2B (réforme 2026-2027) :
+ * particulier (typent TE_PRIVATE) OU non assujetti à la TVA (champ « Assujetti
+ * à la TVA » de la fiche tiers). Ces tiers relèvent de l'e-reporting, pas de
+ * la facturation électronique entre assujettis.
+ *
+ * Le typent seul ne suffit pas (une association non assujettie n'est pas un
+ * « Particulier ») et le tva_assuj seul non plus (souvent laissé par défaut) :
+ * on combine les deux. Même critère que lemonsuperpdp_is_non_assujetti(),
+ * dupliqué ici pour ne pas dépendre de LemonSuperPDP.
+ *
+ * @param Societe|null $thirdparty  Tiers Dolibarr (fetch déjà fait)
+ * @return bool
+ */
+function lemonfacturx_is_non_assujetti($thirdparty)
+{
+	if (empty($thirdparty)) {
+		return false;
+	}
+	if (($thirdparty->typent_code ?? '') === 'TE_PRIVATE' || (int) ($thirdparty->typent_id ?? 0) === 8) {
+		return true;
+	}
+	return isset($thirdparty->tva_assuj) && (int) $thirdparty->tva_assuj === 0;
+}
+
+/**
  * Vérifie les infos obligatoires pour Factur-X EN16931 + BR-FR
  * Retourne un tableau de warnings (vide si tout est OK)
  *
@@ -769,9 +794,10 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 	$buyerEmail = lemonfacturx_get_buyer_email($buyer, $invoice->db);
 	if ($buyerSiren === '' && $buyerEmail === '') {
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnBuyerEndpoint');
-	} elseif ($buyerSiren === '' && $buyerIsFR && ($buyer->typent_code ?? '') !== 'TE_PRIVATE') {
-		// Particulier (TE_PRIVATE) : pas de SIREN, hors champ e-invoicing
-		// (le B2C relève du e-reporting) → pas d'avertissement de routage
+	} elseif ($buyerSiren === '' && $buyerIsFR && !lemonfacturx_is_non_assujetti($buyer)) {
+		// Non assujetti (particulier OU « Assujetti à la TVA » à Non, ex. asso) :
+		// pas de SIREN, hors champ e-invoicing (relève du e-reporting)
+		// → pas d'avertissement de routage
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnBuyerSIRENRouting');
 	}
 
