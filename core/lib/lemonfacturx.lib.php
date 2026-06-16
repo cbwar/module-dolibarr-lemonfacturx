@@ -763,14 +763,13 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 
 	// BT-34 (adresse électronique vendeur) : satisfaite par le SIREN (endpoint 0225)
 	// OU l'email. On n'avertit que si aucune des deux n'est disponible.
-	$sellerSiren = $sellerIsFR ? lemonfacturx_extract_siren($mysoc->idprof2 ?? '') : '';
+	$sellerSiren = $sellerIsFR ? lemonfacturx_party_siren($mysoc) : '';
 	if ($sellerSiren === '' && empty($mysoc->email)) {
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnSellerEndpoint');
 	}
 
-	// Chorus Pro / B2G : le SIRET vendeur (BT-29 ram:ID) doit faire exactement
-	// 14 chiffres. Le SIREN (BT-30) en est dérivé. Sans SIRET à 14 chiffres,
-	// BT-29 n'est pas émis et le routage Chorus Pro perd l'établissement.
+	// BT-29 (ram:ID) : si un SIRET est renseigné (idprof2), il doit faire 14
+	// chiffres. Il identifie l'établissement ; le SIREN (BT-30) vient d'idprof1.
 	$sellerSiret = $sellerIsFR ? preg_replace('/[^0-9]/', '', $mysoc->idprof2 ?? '') : '';
 	if ($sellerSiret !== '' && strlen($sellerSiret) !== 14) {
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnSellerSIRETLen', strlen($sellerSiret));
@@ -793,7 +792,7 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 	// OU l'email. Pour un acheteur FR, l'absence de SIREN empêche le routage PA/PDP,
 	// même si un email est présent (un email n'est pas routable sur le réseau).
 	$buyerIsFR  = strtoupper(!empty($buyer->country_code) ? $buyer->country_code : 'FR') === 'FR';
-	$buyerSiren = $buyerIsFR ? lemonfacturx_extract_siren($buyer->idprof2 ?? '') : '';
+	$buyerSiren = $buyerIsFR ? lemonfacturx_party_siren($buyer) : '';
 	$buyerEmail = lemonfacturx_get_buyer_email($buyer, $invoice->db);
 	if ($buyerSiren === '' && $buyerEmail === '') {
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnBuyerEndpoint');
@@ -804,7 +803,7 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnBuyerSIRENRouting');
 	}
 
-	// BT-47 acheteur : si un SIRET est renseigné, il doit faire 14 chiffres (Chorus Pro).
+	// BT-46 acheteur (ram:ID) : si un SIRET est renseigné, il doit faire 14 chiffres.
 	$buyerSiret = $buyerIsFR ? preg_replace('/[^0-9]/', '', $buyer->idprof2 ?? '') : '';
 	if ($buyerSiret !== '' && strlen($buyerSiret) !== 14) {
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnBuyerSIRETLen', strlen($buyerSiret));
@@ -839,22 +838,19 @@ function lemonfacturx_build_trade_party_xml($role, $party, $email)
 	// idprof2 contient un identifiant local (HRB allemand, CRN...) qui ne doit
 	// surtout pas être publié sous un scheme SIREN/SIRET (0002/0009/0225) —
 	// l'endpoint retombe alors sur l'email (EM).
-	$isFR    = (strtoupper($country) === 'FR');
-	$siren   = $isFR ? lemonfacturx_extract_siren($party->idprof2 ?? '') : '';
-	$siretDigits = $isFR ? preg_replace('/[^0-9]/', '', $party->idprof2 ?? '') : '';
-	$siret14 = (strlen($siretDigits) === 14) ? $siretDigits : '';
-
 	// EN16931 CII : deux champs DISTINCTS, chacun son identifiant (ISO 6523).
 	//  - BT-29/BT-46  ram:ID                        = SIRET (14 chiffres), schemeID 0009  → l'établissement
 	//  - BT-30/BT-47  SpecifiedLegalOrganization/ID = SIREN (9 chiffres),  schemeID 0002  → l'entité légale
-	// Le SIRET ne va PAS dans SpecifiedLegalOrganization : la règle BR-FR-10 du
-	// Schematron officiel Factur-X y attend le SIREN (exactement 9 chiffres), et les
-	// Plateformes Agréées (SUPER PDP, PPF...) comparent le SIREN de la session OAuth
-	// à ce champ pour le dépôt. Chorus Pro conserve le SIRET via BT-29/BT-46.
-	// (Jusqu'en 3.1.x le SIRET était mis à tort dans SpecifiedLegalOrganization,
-	// d'où les rejets « ne correspond pas au vendeur » et BR-FR-10 SIREN vide.)
-	// L'ordre des éléments suit la séquence XSD du TradePartyType : ID, puis Name,
-	// puis SpecifiedLegalOrganization.
+	// La règle BR-FR-10 du Schematron officiel Factur-X exige le SIREN (exactement
+	// 9 chiffres) dans SpecifiedLegalOrganization. C'est la norme ; toute plateforme
+	// (PA/PDP, Chorus Pro...) doit la respecter, on ne s'en écarte pas.
+	// L'ordre suit la séquence XSD du TradePartyType : ID, Name, SpecifiedLegalOrganization.
+	//
+	// Source SIREN = idprof1 (à défaut dérivé du SIRET) ; source SIRET = idprof2.
+	$isFR = (strtoupper($country) === 'FR');
+	$siren = $isFR ? lemonfacturx_party_siren($party) : '';
+	$siretDigits = $isFR ? preg_replace('/[^0-9]/', '', $party->idprof2 ?? '') : '';
+	$siret14 = (strlen($siretDigits) === 14) ? $siretDigits : '';
 
 	$xml  = '    <ram:'.$tag.'>'."\n";
 	if (!empty($siret14)) {
@@ -1243,6 +1239,24 @@ function lemonfacturx_extract_siren($siret)
 		return '';
 	}
 	return substr(preg_replace('/[^0-9]/', '', $siret), 0, 9);
+}
+
+/**
+ * SIREN (9 chiffres) d'un tiers, pour BT-30/BT-47 (SpecifiedLegalOrganization).
+ * Source canonique : champ idprof1 (SIREN) de Dolibarr ; à défaut, dérivé des
+ * 9 premiers chiffres du SIRET (idprof2). Renvoie '' si rien d'exploitable ou
+ * si la valeur ne se normalise pas à exactement 9 chiffres (BR-FR-10).
+ *
+ * @param object $party  mysoc ou Societe (champs idprof1 / idprof2)
+ * @return string        SIREN à 9 chiffres, ou ''
+ */
+function lemonfacturx_party_siren($party)
+{
+	$siren = lemonfacturx_extract_siren($party->idprof1 ?? '');
+	if ($siren === '') {
+		$siren = lemonfacturx_extract_siren($party->idprof2 ?? '');
+	}
+	return (strlen($siren) === 9) ? $siren : '';
 }
 
 /**

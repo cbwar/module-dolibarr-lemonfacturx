@@ -104,7 +104,7 @@ function lfx_std_validate($xml, $xsdPath, $expectBrOk = true)
 
 echo "=== LemonFacturX - Tests unitaires standalone ===\n\n";
 
-$mysoc = lfx_make_party(['name' => 'LEMON SASU', 'idprof2' => '90945830600012', 'tva_intra' => 'FR38909458306']);
+$mysoc = lfx_make_party(['name' => 'LEMON SASU', 'idprof1' => '909458306', 'idprof2' => '90945830600012', 'tva_intra' => 'FR38909458306']);
 
 // ---------------------------------------------------------------------------
 $currentTest = 'U01 standard FR 20%';
@@ -131,6 +131,18 @@ lfx_assert_eq('0002', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:SpecifiedLegal
 lfx_assert_eq('909458306', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID'), 'BT-30 SIREN vendeur');
 lfx_assert(empty($w), 'aucun warning ('.implode(' ; ', $w).')');
 echo "U01 OK\n";
+
+// U01b : source du SIREN — idprof1 prioritaire, fallback dérivé du SIRET
+$wb = [];
+$socPrio = lfx_make_party(['idprof1' => '111222333', 'idprof2' => '44455566600018', 'tva_intra' => '', 'tva_assuj' => 0]);
+$xpb = lfx_xpath(lemonfacturx_build_xml($inv, $socPrio, $wb));
+lfx_assert_eq('111222333', lfx_xp_str($xpb, '//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID'), 'BT-30 SIREN = idprof1 (prioritaire sur le SIRET)');
+lfx_assert_eq('44455566600018', lfx_xp_str($xpb, '//ram:SellerTradeParty/ram:ID'), 'BT-29 SIRET = idprof2');
+$wf = [];
+$socFb = lfx_make_party(['idprof1' => '', 'idprof2' => '90945830600012', 'tva_intra' => 'FR38909458306']);
+$xpf = lfx_xpath(lemonfacturx_build_xml($inv, $socFb, $wf));
+lfx_assert_eq('909458306', lfx_xp_str($xpf, '//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID'), 'BT-30 SIREN dérivé du SIRET quand idprof1 absent');
+echo "U01b OK\n";
 
 // ---------------------------------------------------------------------------
 $currentTest = 'U02 avoir 381 montants positifs + BG-3';
