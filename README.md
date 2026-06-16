@@ -33,7 +33,7 @@ Développé et maintenu par [Lemon](https://hellolemon.fr), agence web et commun
 4. Configurer via **Accueil > Configuration > Modules > LemonFacturX** :
    - Compte bancaire (IBAN/BIC)
    - Moyen de paiement par défaut (virement, virement SEPA, prélèvement SEPA, prélèvement)
-   - Identifiant légal BT-30/BT-47 (SIRET sous schemeID 0009)
+   - Identifiants vendeur/acheteur : SIRET en BT-29/BT-46 (schemeID 0009), SIREN en BT-30/BT-47 (schemeID 0002)
    - Exigibilité TVA (BT-8 : débits / encaissements), cadre de facturation (BT-23)
    - Mode de gestion d'erreur (best-effort / strict), contrôle des règles métier
    - Éventuellement chemin PHP CLI, chemin veraPDF et mentions légales
@@ -127,7 +127,8 @@ Modèle de menace, protections détaillées et processus de signalement : voir [
 | BT-23 Business process | `LEMONFACTURX_BT23_PROCESS` (A1, B1, S1..., omis si vide) |
 | BT-25/BG-3 Preceding invoice | `fk_facture_source` (avoir/rectificative) + acomptes imputés |
 | Seller / Buyer | `$mysoc` / `$invoice->thirdparty` |
-| BT-30/BT-47 Legal ID | `idprof2` → SIRET sous schemeID 0009 (ISO 6523, accepté Chorus Pro) |
+| BT-29/BT-46 ID établissement | `idprof2` → SIRET (14 chiffres) sous schemeID 0009 (ISO 6523) — pour Chorus Pro |
+| BT-30/BT-47 ID légal | `idprof2` → SIREN (9 chiffres) sous schemeID 0002 (ISO 6523) — exigé par BR-FR-10 / Plateformes Agréées |
 | BT-31/BT-32 Tax registration | `tva_intra`, ou SIREN `schemeID="FC"` (franchise en base) |
 | BT-34/BT-49 Endpoint | SIREN `schemeID="0225"` (annuaire PPF), repli email `EM` |
 | BT-72 Delivery date | `$invoice->delivery_date` si renseignée (forcée pour l'intracom K) |
@@ -328,7 +329,7 @@ Refonte de conformité majeure — **lire les changements de comportement avant 
 - **SIREN/SIRET réservés aux tiers français** : l'identifiant local d'un tiers étranger (HRB allemand...) n'est plus publié sous un scheme SIREN/SIRET — repli email pour l'endpoint.
 
 **Changements de comportement** :
-- **BT-30/BT-47** : identifiant légal **toujours SIRET sous schemeID 0009** (seul couple à la fois conforme ISO 6523 et accepté par Chorus Pro). Le réglage `LEMONFACTURX_LEGAL_ID_SCHEME` a été **retiré** : les anciens couples SIREN/0002 (rejeté par Chorus Pro) et SIRET/0002 (héritage 2.1.x, identifiant malformé) ne produisaient que des PDF refusés ou non conformes.
+- **Deux identifiants dans deux champs distincts (depuis 3.2.0)** : le **SIRET** (établissement, 14 chiffres) va dans `ram:ID` schemeID 0009 (BT-29/BT-46), et le **SIREN** (entité légale, 9 chiffres) dans `SpecifiedLegalOrganization/ram:ID` schemeID 0002 (BT-30/BT-47). Jusqu'en 3.1.x le module mettait à tort le SIRET dans `SpecifiedLegalOrganization`, ce qui faisait échouer la règle **BR-FR-10** (« SIREN du vendeur obligatoire, exactement 9 chiffres ») et le dépôt sur les Plateformes Agréées (« l'entreprise liée à la session ne correspond pas au vendeur »). Chorus Pro conserve son SIRET via BT-29/BT-46. Aucun réglage nécessaire : chaque identifiant à sa place.
 - **Mentions légales BR-FR-05 (PMD/PMT/AAB)** : le texte par défaut s'applique désormais réellement quand le champ est laissé vide (auparavant les constantes créées vides à l'activation produisaient des mentions vides dans le XML).
 - **Libellés moyens de paiement corrigés** : 58 = **virement** SEPA (et non prélèvement) ; nouveau code 59 = prélèvement SEPA (avec ICS/RUM/IBAN débiteur BT-89/90/91). **Vérifier votre réglage si vous aviez choisi « 58 - Prélèvement SEPA »**.
 - **BT-72** : date de livraison réelle (`delivery_date`) ou bloc omis — la date d'émission n'est plus forgée en date de livraison (sauf repli intracom).

@@ -207,10 +207,12 @@ function lemonfacturx_build_xml($invoice, $mysoc, &$buildWarnings = [])
 			$hasIntracom = true;
 		}
 	}
-	// Repli date d'émission pour tout l'intracom (K et AE) : BR-IC-11 l'exige
-	// pour K, et les contrôles acheteurs/PDP la consomment aussi pour AE.
+	// Date de livraison (BT-72) : la vraie date si renseignée, sinon la date
+	// d'émission. On la met TOUJOURS : ça satisfait BR-IC-11 pour l'intracom, et
+	// surtout ça garantit un ApplicableHeaderTradeDelivery non vide (sinon warning
+	// PEPPOL-EN16931-R008 « Document MUST not contain empty elements »).
 	$deliveryDateTs = !empty($invoice->delivery_date) ? $invoice->delivery_date : ($invoice->date_livraison ?? null);
-	$deliveryDate = !empty($deliveryDateTs) ? date('Ymd', $deliveryDateTs) : ($hasIntracom ? $issueDate : null);
+	$deliveryDate = !empty($deliveryDateTs) ? date('Ymd', $deliveryDateTs) : $issueDate;
 
 	$xml .= '  <ram:ApplicableHeaderTradeDelivery>'."\n";
 	if ($hasK) {
@@ -766,8 +768,9 @@ function lemonfacturx_check_mandatory($invoice, $mysoc)
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnSellerEndpoint');
 	}
 
-	// Chorus Pro / B2G : le SIRET vendeur (BT-30) doit faire exactement 14 chiffres.
-	// Un SIREN à 9 chiffres passe la validation EN16931 mais est rejeté par Chorus Pro.
+	// Chorus Pro / B2G : le SIRET vendeur (BT-29 ram:ID) doit faire exactement
+	// 14 chiffres. Le SIREN (BT-30) en est dérivé. Sans SIRET à 14 chiffres,
+	// BT-29 n'est pas émis et le routage Chorus Pro perd l'établissement.
 	$sellerSiret = $sellerIsFR ? preg_replace('/[^0-9]/', '', $mysoc->idprof2 ?? '') : '';
 	if ($sellerSiret !== '' && strlen($sellerSiret) !== 14) {
 		$warnings[] = lemonfacturx_trans('LemonFacturXWarnSellerSIRETLen', strlen($sellerSiret));
@@ -838,24 +841,29 @@ function lemonfacturx_build_trade_party_xml($role, $party, $email)
 	// l'endpoint retombe alors sur l'email (EM).
 	$isFR    = (strtoupper($country) === 'FR');
 	$siren   = $isFR ? lemonfacturx_extract_siren($party->idprof2 ?? '') : '';
-	$siret   = $isFR ? preg_replace('/[^0-9]/', '', $party->idprof2 ?? '') : '';
+	$siretDigits = $isFR ? preg_replace('/[^0-9]/', '', $party->idprof2 ?? '') : '';
+	$siret14 = (strlen($siretDigits) === 14) ? $siretDigits : '';
 
-	// BT-30 (vendeur) / BT-47 (acheteur) : identifiant légal.
-	// ISO 6523 : 0002 = SIREN (9 chiffres), 0009 = SIRET (14 chiffres).
-	// On émet TOUJOURS le SIRET sous le schéma 0009 : c'est le seul couple à la
-	// fois conforme ISO 6523 et accepté par Chorus Pro, et tout vendeur/acheteur
-	// français possède un SIRET (un établissement). Les anciens couples SIREN/0002
-	// (rejeté par Chorus Pro) et SIRET/0002 (héritage 2.1.x, identifiant malformé)
-	// ont été retirés : ils ne produisaient que des PDF refusés ou non conformes.
-	// Distinct de l'endpoint de routage BT-34/BT-49 ci-dessous (SIREN 0225).
-	$legalId = $siret;
-	$legalSchemeId = '0009';
+	// EN16931 CII : deux champs DISTINCTS, chacun son identifiant (ISO 6523).
+	//  - BT-29/BT-46  ram:ID                        = SIRET (14 chiffres), schemeID 0009  → l'établissement
+	//  - BT-30/BT-47  SpecifiedLegalOrganization/ID = SIREN (9 chiffres),  schemeID 0002  → l'entité légale
+	// Le SIRET ne va PAS dans SpecifiedLegalOrganization : la règle BR-FR-10 du
+	// Schematron officiel Factur-X y attend le SIREN (exactement 9 chiffres), et les
+	// Plateformes Agréées (SUPER PDP, PPF...) comparent le SIREN de la session OAuth
+	// à ce champ pour le dépôt. Chorus Pro conserve le SIRET via BT-29/BT-46.
+	// (Jusqu'en 3.1.x le SIRET était mis à tort dans SpecifiedLegalOrganization,
+	// d'où les rejets « ne correspond pas au vendeur » et BR-FR-10 SIREN vide.)
+	// L'ordre des éléments suit la séquence XSD du TradePartyType : ID, puis Name,
+	// puis SpecifiedLegalOrganization.
 
 	$xml  = '    <ram:'.$tag.'>'."\n";
+	if (!empty($siret14)) {
+		$xml .= '      <ram:ID schemeID="0009">'.lemonfacturx_xml_encode($siret14).'</ram:ID>'."\n";
+	}
 	$xml .= '      <ram:Name>'.lemonfacturx_xml_encode($party->name ?? '').'</ram:Name>'."\n";
-	if (!empty($legalId)) {
+	if (!empty($siren)) {
 		$xml .= '      <ram:SpecifiedLegalOrganization>'."\n";
-		$xml .= '        <ram:ID schemeID="'.lemonfacturx_xml_encode($legalSchemeId).'">'.lemonfacturx_xml_encode($legalId).'</ram:ID>'."\n";
+		$xml .= '        <ram:ID schemeID="0002">'.lemonfacturx_xml_encode($siren).'</ram:ID>'."\n";
 		$xml .= '      </ram:SpecifiedLegalOrganization>'."\n";
 	}
 	$xml .= '      <ram:PostalTradeAddress>'."\n";

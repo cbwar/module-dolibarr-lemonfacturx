@@ -123,8 +123,12 @@ $xp = lfx_xpath($xml);
 lfx_assert_eq('380', lfx_xp_str($xp, '//rsm:ExchangedDocument/ram:TypeCode'), 'TypeCode');
 lfx_assert_eq('1200.00', lfx_xp_str($xp, '//ram:DuePayableAmount'), 'DuePayableAmount');
 lfx_assert_eq('S', lfx_xp_str($xp, '//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode'), 'CategoryCode');
-lfx_assert_eq('0009', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID/@schemeID'), 'schemeID légal par défaut (0009)');
-lfx_assert_eq('90945830600012', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID'), 'SIRET vendeur');
+// BT-29 : SIRET (établissement) dans ram:ID/0009
+lfx_assert_eq('0009', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:ID/@schemeID'), 'BT-29 schemeID SIRET (0009)');
+lfx_assert_eq('90945830600012', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:ID'), 'BT-29 SIRET vendeur');
+// BT-30 : SIREN (entité légale) dans SpecifiedLegalOrganization/0002
+lfx_assert_eq('0002', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID/@schemeID'), 'BT-30 schemeID SIREN (0002)');
+lfx_assert_eq('909458306', lfx_xp_str($xp, '//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID'), 'BT-30 SIREN vendeur');
 lfx_assert(empty($w), 'aucun warning ('.implode(' ; ', $w).')');
 echo "U01 OK\n";
 
