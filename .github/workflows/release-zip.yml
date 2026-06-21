@@ -15,31 +15,12 @@ jobs:
         # Actions épinglées par SHA (supply-chain) : v4.3.1
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Lint PHP
-        run: |
-          find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l > /dev/null
-
-      - name: Run standalone unit tests
-        run: php tests/unit-tests.php
-
-      - name: Build clean ZIP (dossier racine = lemonfacturx/)
-        run: |
-          mkdir -p /tmp/build/lemonfacturx
-          rsync -a \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.gitignore' \
-            --exclude='.gitattributes' \
-            --exclude='*.md.bak' \
-            --exclude='/tests' \
-            --exclude='/demo' \
-            ./ /tmp/build/lemonfacturx/
-          cd /tmp/build && zip -r "/tmp/lemonfacturx-${GITHUB_REF_NAME}.zip" lemonfacturx/
-          unzip -l "/tmp/lemonfacturx-${GITHUB_REF_NAME}.zip" | head -20
+      - name: Build ZIP
+        run: bash build.sh "$GITHUB_REF_NAME"
 
       - name: Attach ZIP to release
         # softprops/action-gh-release v2.6.2 épinglée par SHA
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
-          files: /tmp/lemonfacturx-*.zip
+          files: dist/lemonfacturx-*.zip
           fail_on_unmatched_files: true
