@@ -1,0 +1,15 @@
+{
+    "name": "hello-lemon/lemonfacturx-vendor-build",
+    "authors": [
+        {
+            "name": "cbwar",
+            "email": "cbwar@protonmail.com"
+        }
+    ],
+    "require": {
+        "php": "^7.4||^8.0",
+        "setasign/fpdf": "^1.9",
+        "setasign/fpdi": "^2.6",
+        "atgp/factur-x": "^3.3"
+    }
+}
