@@ -9,10 +9,6 @@ VERSION="${1:-dev}"
 DIST_DIR="$(dirname "$0")/dist"
 OUT="${DIST_DIR}/lemonfacturx-${VERSION}.zip"
 
-echo "==> Lint PHP (hors vendor/)"
-find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l > /dev/null
-echo "    OK"
-
 echo "==> composer install --no-dev"
 composer install --no-dev --optimize-autoloader --quiet
 

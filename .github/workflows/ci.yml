@@ -24,4 +24,6 @@ jobs:
           echo "Lint OK"
 
       - name: Run standalone unit tests (XSD + règles métier EN16931)
-        run: php tests/unit-tests.php
+        run: |
+          composer install
+          php tests/unit-tests.php
