@@ -18,9 +18,9 @@ Le module présente un **niveau de maturité sécurité supérieur à la moyenne
 |---|---|
 | 🔴 Élevée | 0 |
 | 🟠 Moyenne | 1 |
-| 🟡 Faible | 3 |
+| 🟡 Faible | 2 |
 | 🔵 Informative | 4 |
-| ✅ Résolu depuis audit initial | 6 |
+| ✅ Résolu depuis audit initial | 7 |
 
 ---
 
@@ -295,7 +295,7 @@ La regex de validation de l'URL (`#^https://github\.com/hello-lemon/...#`) n'est
 
 **Aucune vulnérabilité identifiée sur PHP ≥ 8.0. Voir constat 2.18 pour PHP 7.4.**
 
-### 2.18 🟡 Protection XXE absente pour PHP < 8.0 (`lemonfacturx_rules.php`)
+### 2.18 ✅ Protection XXE absente pour PHP < 8.0 (`lemonfacturx_rules.php`) — **RÉSOLU**
 
 Le module supporte PHP 7.4+ (`composer.json` : `"php": "^7.4||^8.0"`). Sur PHP < 8.0, `DOMDocument::loadXML()` charge les entités externes par défaut. `libxml_disable_entity_loader(true)` n'est pas appelé dans `lemonfacturx_rules.php`.
 
@@ -336,7 +336,7 @@ Le `try/catch(\Throwable)` dans `injectXmlIntoPdf()` protège contre les excepti
 | 2.12 | Path traversal `last_main_doc` — pas de `realpath()` containment | 🟡 Faible | Ajouter vérification `str_starts_with(realpath(...), realpath(DOL_DATA_ROOT))` |
 | 2.5 | Pas de contrôle taille/signature avant chargement PDF in-process | 🟡 Faible | Ajouter garde-fou dans `injectXmlIntoPdf()` avant `file_get_contents()` |
 | 2.19 | Injection in-process — changement de modèle d'isolation | 🔵 Info | Pris en compte via 2.5 ; aucune action bloquante |
-| 2.18 | Protection XXE absente pour PHP < 8.0 (`lemonfacturx_rules.php`) | 🟡 Faible | Ajouter `libxml_disable_entity_loader(true)` conditionnel avant `loadXML()` |
+| ~~2.18~~ | ~~Protection XXE absente pour PHP < 8.0~~ | ✅ Résolu | `libxml_disable_entity_loader(true)` ajouté dans les deux fonctions `loadXML()` |
 | 2.14 | URL de mise à jour non re-validée depuis le cache | 🔵 Info | Appliquer la regex de validation aussi sur la lecture de cache |
 | 2.6 | Dépendance à `.htaccess` (inopérant sous Nginx) | 🔵 Info | Vérifier la config serveur réelle |
 | ~~2.3~~ | ~~Portée admin de `LEMONFACTURX_PHP_CLI_PATH`~~ | ✅ Résolu | `resolvePhpBinary()` supprimé, paramètre inutilisé |
