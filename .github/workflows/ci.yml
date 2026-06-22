@@ -5,18 +5,29 @@ on:
     branches: ['**']
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         # Action épinglée par SHA (supply-chain) : v4.3.1
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: PHP version
-        run: php -v
+      - name: Get PHP Versions
+        id: php-version
+        uses: antfroger/php-version-action@v1
+
+      - name: Setup PHP (Minimal)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install
 
       - name: Lint PHP (module, hors vendor)
         run: |
@@ -24,7 +35,7 @@ jobs:
           echo "Lint OK"
 
       - name: Run standalone unit tests (XSD + règles métier EN16931)
-        run: |
-          composer install
-          php tests/unit-tests.php
-          php vendor/bin/phpunit
+        run: php tests/unit-tests.php
+
+      - name: Run PHPUnit tests
+        run: php vendor/bin/phpunit
