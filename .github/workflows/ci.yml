@@ -27,3 +27,4 @@ jobs:
         run: |
           composer install
           php tests/unit-tests.php
+          php vendor/bin/phpunit
