@@ -9,10 +9,15 @@ VERSION="${1:-dev}"
 DIST_DIR="$(dirname "$0")/dist"
 OUT="${DIST_DIR}/lemonfacturx-${VERSION}.zip"
 
-echo "==> composer install --no-dev"
+echo "Install dependencies"
 composer install --no-dev --optimize-autoloader --quiet
 
-echo "==> Assemblage de l'archive"
+echo "Applying patches"
+for patch in patches/*; do
+    patch -p1 -N < "$patch"
+done
+
+echo "Creating archive"
 mkdir -p "$DIST_DIR"
 test -f "$OUT" && rm -v "$OUT"
 zip -r "$OUT" . \
@@ -27,6 +32,7 @@ zip -r "$OUT" . \
     --exclude 'composer.json' \
     --exclude 'composer.lock' \
     --exclude 'dist/*' \
+    --exclude 'patches/*' \
     --exclude 'vendor/*/*/tests/*' \
     --exclude 'vendor/*/*/test/*' \
     --exclude 'vendor/*/*/doc/*' \
@@ -36,4 +42,4 @@ zip -r "$OUT" . \
     --exclude 'vendor/*/*/img/*' \
     --exclude 'vendor/*/*/.github/*'
 
-echo "==> Created archive : $OUT"
+echo "Created: $OUT"
