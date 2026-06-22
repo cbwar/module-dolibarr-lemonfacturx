@@ -10,7 +10,10 @@ DIST_DIR="$(dirname "$0")/dist"
 OUT="${DIST_DIR}/lemonfacturx-${VERSION}.zip"
 
 echo "Install dependencies"
-composer install --no-dev --optimize-autoloader --quiet
+composer install --no-dev --quiet
+
+echo "Regenerate autoloader (after patches)"
+composer dump-autoload --optimize --no-dev
 
 echo "Creating archive"
 mkdir -p "$DIST_DIR"
