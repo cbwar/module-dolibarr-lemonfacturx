@@ -177,32 +177,11 @@ class ActionsLemonFacturX
 			return array('ok' => false, 'msg' => lemonfacturx_trans('LemonFacturXChorusErr'));
 		}
 
-		$xmlTempDir = DOL_DATA_ROOT.'/facturx/temp';
-		dol_mkdir($xmlTempDir);
-		$tmp = tempnam($xmlTempDir, 'facturxchorus_');
-		if ($tmp === false || file_put_contents($tmp, $chorusXml) === false) {
-			if ($tmp !== false) { @unlink($tmp); }
+		$injectError = $this->injectXmlIntoPdf($chorusPdf, $chorusXml, $modulePath);
+		if ($injectError !== null) {
 			@unlink($chorusPdf);
-			dol_syslog('LemonFacturX Chorus: écriture XML temp impossible', LOG_ERR);
+			dol_syslog('LemonFacturX Chorus: injection KO : '.$injectError, LOG_ERR);
 			return array('ok' => false, 'msg' => lemonfacturx_trans('LemonFacturXChorusErr'));
-		}
-
-		try {
-			$cmd  = escapeshellarg($phpBin);
-			$cmd .= ' '.escapeshellarg($modulePath.'/scripts/inject_facturx.php');
-			$cmd .= ' '.escapeshellarg($chorusPdf);
-			$cmd .= ' '.escapeshellarg($tmp);
-			$cmd .= ' 2>&1';
-			$output = [];
-			$rc = 0;
-			exec($cmd, $output, $rc);
-			if ($rc !== 0) {
-				@unlink($chorusPdf);
-				dol_syslog('LemonFacturX Chorus: injection KO : '.dol_trunc(implode(' ', $output), 300), LOG_ERR);
-				return array('ok' => false, 'msg' => lemonfacturx_trans('LemonFacturXChorusErr'));
-			}
-		} finally {
-			@unlink($tmp);
 		}
 
 		dol_syslog('LemonFacturX: PDF Chorus généré pour '.$invoice->ref.' ('.basename($chorusPdf).')', LOG_INFO);
@@ -233,12 +212,8 @@ class ActionsLemonFacturX
 			setEventMessages($langs->trans('LemonFacturXMsgNoPdf'), null, 'warnings');
 			return;
 		}
-		$phpBin = $this->resolvePhpBinary(0);
-		if ($phpBin === null) {
-			return; // message déjà émis par resolvePhpBinary
-		}
 
-		$res = $this->generateChorusPdf($invoice, $mainPdf, $mysoc, $modulePath, $phpBin);
+		$res = $this->generateChorusPdf($invoice, $mainPdf, $mysoc, $modulePath);
 		setEventMessages($res['msg'], null, $res['ok'] ? 'mesgs' : 'warnings');
 	}
 
@@ -508,47 +483,41 @@ class ActionsLemonFacturX
 	}
 
 	/**
-	 * Résout et valide le binaire PHP CLI configuré (LEMONFACTURX_PHP_CLI_PATH).
-	 * Retourne null en cas d'échec après avoir remonté le message via handleNonFatal().
+	 * Injecte le XML Factur-X dans le PDF directement dans le process courant
+	 * (sans subprocess exec). Retourne null si OK, un message d'erreur sinon.
 	 *
-	 * @param int $strict
-	 * @return string|null
+	 * L'écriture est atomique : le résultat est d'abord écrit dans un fichier
+	 * temporaire, puis renommé sur l'original pour éviter un PDF tronqué en cas
+	 * d'interruption.
+	 *
+	 * @param string $pdfPath    Chemin absolu du PDF à modifier
+	 * @param string $xml        Contenu XML Factur-X à embarquer
+	 * @param string $modulePath Racine du module (pour localiser vendor/autoload.php)
+	 * @return string|null       Null si OK, message d'erreur sinon
 	 */
-	protected function resolvePhpBinary($strict)
+	protected function injectXmlIntoPdf($pdfPath, $xml, $modulePath)
 	{
-		// Sans surcharge manuelle, on auto-détecte le binaire CLI (avec cache) :
-		// version major.minor du web, en évitant le piège PHP_BINARY=php-fpm en FPM.
-		// 'php' nu (ancien défaut résiduel des activations passées) = pas une vraie
-		// surcharge → auto-détection aussi.
-		$manual = trim(getDolGlobalString('LEMONFACTURX_PHP_CLI_PATH', ''));
-		if ($manual === '' || $manual === 'php') {
-			return lemonfacturx_resolve_php_cli($this->db);
+		$pdfContent = file_get_contents($pdfPath);
+		if ($pdfContent === false) {
+			return lemonfacturx_trans('LemonFacturXErrInjectFailed');
 		}
-
-		$phpBin = getDolGlobalString('LEMONFACTURX_PHP_CLI_PATH', 'php');
-
-		// Hardening : la constante est modifiable par un admin via /admin/const.php.
-		// escapeshellarg() sur la commande bloque déjà toute injection shell (une
-		// valeur piégée finit en "command not found"), mais on refuse explicitement
-		// les valeurs avec caractères exotiques pour éviter les fautes de frappe
-		// qui partiraient en boucle d'erreur et pour afficher un message clair.
-		// `:`, `\`, `(`, `)`, espace autorisés pour les chemins Windows
-		// (ex C:\Program Files\php\php.exe).
-		if (!preg_match('#^[A-Za-z0-9/._:() \\\\-]+$#', $phpBin)) {
-			dol_syslog('LemonFacturX: LEMONFACTURX_PHP_CLI_PATH valeur reçue : '.$phpBin, LOG_ERR);
-			$this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrPhpCliChars'), $strict);
-			return null;
+		try {
+			require_once $modulePath.'/vendor/autoload.php';
+			$writer = new \Atgp\FacturX\Writer();
+			$result = $writer->generate($pdfContent, $xml, 'en16931', false, [], false, 'Alternative');
+		} catch (\Throwable $e) {
+			return lemonfacturx_trans('LemonFacturXErrInjectFailed').' : '.$e->getMessage();
 		}
-
-		// Si l'admin a fourni un chemin absolu, on vérifie qu'il pointe vraiment
-		// vers un exécutable. Cas relatif ("php", "php8.2") : on laisse passer
-		// au shell qui résoudra via PATH.
-		if (strpos($phpBin, '/') !== false && !is_executable($phpBin)) {
-			$this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrPhpCliNotFound', $phpBin), $strict);
-			return null;
+		$tmp = $pdfPath.'.facturx.tmp';
+		if (file_put_contents($tmp, $result) !== strlen($result)) {
+			@unlink($tmp);
+			return lemonfacturx_trans('LemonFacturXErrInjectFailed').' : write failed';
 		}
-
-		return $phpBin;
+		if (!rename($tmp, $pdfPath)) {
+			@unlink($tmp);
+			return lemonfacturx_trans('LemonFacturXErrInjectFailed').' : rename failed';
+		}
+		return null;
 	}
 
 	/**

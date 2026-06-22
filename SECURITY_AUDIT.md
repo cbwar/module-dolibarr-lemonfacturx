@@ -1,7 +1,7 @@
 # Rapport de sécurité — Module LemonFacturX (Dolibarr)
 
 **Cible auditée :** `hello-lemon/module-dolibarr-lemonfacturx`
-**Version analysée :** 3.5.0 (dernière release), branch `main` au 21 juin 2026
+**Version analysée :** 3.5.0 (dernière release), branch `test` au 22 juin 2026
 **Contexte :** module complémentaire Dolibarr pour la génération de factures Factur-X EN16931, déployé en environnement self-hosted (Dolibarr 21)
 **Méthode :** revue de code statique intégrale — tous les fichiers PHP hors `vendor/` et `tests/` ont été couverts lors de cette mise à jour. Recherche de CVE sur les dépendances (composer.lock). Analyse de la documentation publique (README, SECURITY.md).
 **Limites :** aucun test dynamique (fuzzing, pentest) effectué. Absence d'audit de `atgp/factur-x` v3.3.0 au-delà de ses CVE publiées.
@@ -18,9 +18,9 @@ Le module présente un **niveau de maturité sécurité supérieur à la moyenne
 |---|---|
 | 🔴 Élevée | 0 |
 | 🟠 Moyenne | 1 |
-| 🟡 Faible | 4 |
-| 🔵 Informative | 3 |
-| ✅ Résolu depuis audit initial | 4 |
+| 🟡 Faible | 3 |
+| 🔵 Informative | 4 |
+| ✅ Résolu depuis audit initial | 6 |
 
 ---
 
@@ -60,64 +60,56 @@ Le `composer.json` et le `composer.lock` ont été ajoutés le 21 juin 2026. Dep
 
 ## 2. Constats — Code propre au module
 
-### 2.1 ✅ Construction de la commande `exec()` (`actions_lemonfacturx.class.php`)
+### 2.1 ✅ Construction de la commande `exec()` — **RÉSOLU** (exec supprimé)
 
-```php
-$cmd  = escapeshellarg($phpBin);
-$cmd .= ' '.escapeshellarg($modulePath.'/scripts/inject_facturx.php');
-$cmd .= ' '.escapeshellarg($file);
-$cmd .= ' '.escapeshellarg($this->xmlTmpFile);
-```
+L'injection XML dans le PDF se faisait via un subprocess `exec()` appelant `scripts/inject_facturx.php`, avec tous les arguments protégés par `escapeshellarg()`. Aucune injection de commande shell n'avait été identifiée.
 
-Tous les arguments passent par `escapeshellarg()`, y compris ceux dérivés de données métier (`$file`). **Aucune injection de commande shell identifiée.**
+**Mise à jour 22/06/2026 :** l'appel `exec()` a été supprimé de `afterPDFCreation()` et `generateChorusPdf()`. L'injection utilise désormais `\Atgp\FacturX\Writer::generate()` directement dans le process web, rendu possible par le renommage de `class FPDF` → `class SetasignFPDF` dans `vendor/setasign/fpdf/fpdf.php` (patch `patches/fpdf.patch`) qui élimine le conflit de classe avec le FPDF embarqué dans Dolibarr. `resolvePhpBinary()` et `$xmlTmpFile` ont été supprimés. **Constat clos — voir constat 2.19 pour le nouveau modèle d'isolation.**
 
 ### 2.2 ✅ Origine des chemins de fichiers
 
 - `$file` provient de `$parameters['file']`, fourni par le hook Dolibarr core `afterPDFCreation` — pas d'entrée utilisateur directe.
-- `$this->xmlTmpFile` est généré par `tempnam()` dans `DOL_DATA_ROOT/facturx/temp/` — nom aléatoire, répertoire fixe.
+- Le fichier XML temporaire (`tempnam()` dans `DOL_DATA_ROOT/facturx/temp/`) n'est plus créé dans le flux principal : le XML est passé en chaîne directement à `Writer::generate()`.
 
-**Aucun path traversal identifié** sur ces deux paramètres dans le code revu.
+**Aucun path traversal identifié** sur ces paramètres dans le code revu.
 
-### 2.3 🟠 Validation de `LEMONFACTURX_PHP_CLI_PATH` — défense en profondeur correcte, mais surface résiduelle
+### 2.3 ✅ Validation de `LEMONFACTURX_PHP_CLI_PATH` — **RÉSOLU** (paramètre supprimé)
+
+L'audit pointait la surface de confiance élargie autour de `LEMONFACTURX_PHP_CLI_PATH` : tout admin Dolibarr pouvait modifier ce chemin, qui était ensuite utilisé dans `exec()`.
+
+**Mise à jour 22/06/2026 :** `resolvePhpBinary()` a été supprimé et `LEMONFACTURX_PHP_CLI_PATH` n'est plus utilisé par le code d'injection. La surface d'attaque associée est éliminée. **Constat clos.**
+
+*Note :* si le paramètre `LEMONFACTURX_PHP_CLI_PATH` subsiste dans `admin/setup.php` comme champ configurable, il doit être retiré de l'interface pour éviter toute confusion.
+
+### 2.4 ✅ Absence de timeout shell sur les subprocessus d'injection — **RÉSOLU** (subprocessus supprimés)
+
+L'audit signalait l'absence de timeout sur les subprocessus d'injection principale et Chorus, contrairement au traitement déjà en place pour veraPDF.
+
+**Mise à jour 22/06/2026 :** les deux subprocessus d'injection (`inject_facturx.php`) ont été supprimés. L'injection se fait maintenant en mémoire via `Writer::generate()`, soumis au `max_execution_time` normal du process web. Seul `runVeraPdf()` conserve un `exec()`, avec le timeout de 60 s déjà en place. **Constat clos — voir constat 2.19 pour les implications du nouveau modèle.**
+
+### 2.5 🟡 Absence de contrôle de type/taille avant chargement du PDF en mémoire
+
+L'audit initial ciblait `inject_facturx.php`. Ce script n'est plus appelé par le flux principal (injection désormais inline), mais le constat reste actif sous une forme révisée.
+
+**Mise à jour 22/06/2026 :** `injectXmlIntoPdf()` charge le PDF avec `file_get_contents($pdfPath)` sans vérification de taille ni de signature `%PDF-` :
 
 ```php
-if (!preg_match('#^[A-Za-z0-9/._:() \\\\-]+$#', $phpBin)) { /* refus */ }
-if (strpos($phpBin, '/') !== false && !is_executable($phpBin)) { /* refus */ }
+$pdfContent = file_get_contents($pdfPath);  // pas de limite de taille
 ```
 
-La regex whitelist exclut les métacaractères shell dangereux. Combinée à `escapeshellarg()` en aval, la protection est en couches (defense in depth), ce qui est une bonne pratique.
+Avec l'ancien modèle subprocess, un PDF pathologique ne pouvait au pire crasher que le process CLI isolé. Avec l'injection in-process, il est traité directement dans le process web — un PDF de plusieurs centaines de Mo pourrait provoquer une exhaustion mémoire OOM visible par les autres requêtes. L'origine de `$pdfPath` reste contrôlée (cf. 2.2), mais la defense-in-depth est absente.
 
-**Point d'attention :** cette constante est modifiable par tout compte ayant accès à `/admin/const.php` de Dolibarr — c'est-à-dire **tout compte avec droits admin global**, pas seulement un admin du module LemonFacturX spécifiquement. Dans un Dolibarr multi-admin, ça élargit légèrement la surface de confiance nécessaire à ce paramètre. C'est un comportement standard Dolibarr (pas un défaut du module), mais à garder en tête dans un contexte multi-utilisateurs.
-
-**Recommandation :** dans un déploiement avec plusieurs comptes admin, documenter que la modification de `LEMONFACTURX_PHP_CLI_PATH` doit être réservée à l'équipe technique.
-
-### 2.4 🟡 Absence de timeout shell sur les subprocessus d'injection
+**Recommandation :** ajouter dans `injectXmlIntoPdf()` une vérification de taille maximale et de signature avant le chargement :
 
 ```php
-exec($cmd, $output, $returnCode); // pas de wrapper "timeout"
-```
-
-À comparer avec `runVeraPdf()`, qui utilise explicitement un timeout :
-```php
-if (is_executable('/usr/bin/timeout')) {
-    $cmd = '/usr/bin/timeout 60 '.$cmd;
+if (filesize($pdfPath) > 50 * 1024 * 1024) {  // 50 Mo — ajuster selon usage
+    return lemonfacturx_trans('LemonFacturXErrInjectFailed').' : PDF too large';
+}
+$pdfContent = file_get_contents($pdfPath);
+if ($pdfContent === false || substr($pdfContent, 0, 4) !== '%PDF') {
+    return lemonfacturx_trans('LemonFacturXErrInjectFailed').' : not a PDF';
 }
 ```
-
-Le subprocess principal (`inject_facturx.php`) et le subprocess Chorus (`generateChorusPdf()`) n'ont **pas** cette protection. En cas de XML ou PDF pathologique non intercepté par la validation XSD amont, un blocage du subprocess pourrait laisser un process PHP CLI orphelin et potentiellement geler la requête HTTP appelante (`max_execution_time` ne couvre pas le temps passé dans `exec()`). Le risque est le même sur les deux appels.
-
-**Recommandation :** appliquer la même protection `timeout` (ou équivalent portable) aux deux subprocessus `inject_facturx.php` (injection principale et Chorus) que celle déjà en place pour veraPDF.
-
-### 2.5 🟡 `inject_facturx.php` — absence de contrôle de type/taille avant lecture
-
-```php
-$pdfContent = file_get_contents($pdfPath);
-$xmlContent = file_get_contents($xmlPath);
-```
-
-Pas de vérification de la signature de fichier (`%PDF-`) ni de limite de taille avant chargement intégral en mémoire. Risque mineur de déni de service local si un fichier anormalement volumineux se retrouve à ce stade (peu probable compte tenu de l'origine contrôlée des fichiers, cf. 2.2, mais defense-in-depth absente).
-
-**Recommandation :** ajouter une vérification de taille maximale et de signature de fichier avant `file_get_contents()`.
 
 ### 2.6 🔵 Garde CLI et protection `.htaccess`
 
@@ -134,7 +126,7 @@ Bonne pratique de défense en profondeur, cohérente avec le `.htaccess Require 
 
 ### 2.7 🔵 Gestion des erreurs et nettoyage
 
-Le `try/finally` autour du hook garantit la suppression du fichier XML temporaire même en cas d'exception. Écriture atomique (`tempnam` + `rename`) appliquée de façon cohérente dans `inject_facturx.php` et dans le flux principal. Bonne robustesse générale face aux échecs partiels.
+**Mise à jour 22/06/2026 :** le fichier XML temporaire et le `try/finally` de nettoyage associé ont été supprimés du flux principal — le XML est désormais passé en chaîne à `Writer::generate()`, sans écriture sur disque. L'écriture atomique (`tempnam` + `rename`) est conservée dans `injectXmlIntoPdf()` pour le PDF résultant : le nouveau fichier est écrit dans `{pdf}.facturx.tmp` puis renommé sur l'original. Bonne robustesse maintenue face aux échecs partiels.
 
 ### 2.8 ✅ `admin/setup.php` — contrôles d'accès et sanitisation des entrées
 
@@ -149,14 +141,14 @@ Le `try/finally` autour du hook garantit la suppression du fichier XML temporair
 
 ### 2.9 ✅ Chorus Pro (`generateChorusPdf`, `doActions`, `addMoreActionsButtons`)
 
-La section Chorus Pro (lignes 207-366 de `actions_lemonfacturx.class.php`) reproduit fidèlement les mêmes patterns de sécurité que le flux principal :
-- Arguments `exec()` systématiquement passés par `escapeshellarg()` — **aucune injection de commande identifiée**.
-- Le chemin du PDF Chorus est dérivé du chemin du PDF principal via `preg_replace('/\.pdf$/i', '', $mainPdf).'-CHORUS.pdf'` — même origine contrôlée que 2.2, pas d'entrée utilisateur directe.
-- Fichier XML temporaire Chorus écrit dans `DOL_DATA_ROOT/facturx/temp/` avec `tempnam()` + nettoyage `finally` — même modèle que le flux standard.
-- Action `lemonfacturx_generatechorus` soumise au même contrôle CSRF (`currentToken()`) et à la vérification de droit `userCanWrite()` que les autres actions de la fiche facture.
-- En cas d'échec, le PDF principal n'est **jamais** touché (garantie documentée et vérifiée dans le code).
+**Mise à jour 22/06/2026 :** l'appel `exec()` de `generateChorusPdf()` a été supprimé au même titre que le flux principal. Les patterns de sécurité restants sont inchangés et corrects :
+- Le chemin du PDF Chorus est dérivé du chemin du PDF principal via `preg_replace('/\.pdf$/i', '', $mainPdf).'-CHORUS.pdf'` — même origine contrôlée que 2.2.
+- Le fichier XML temporaire Chorus (`tempnam()` + nettoyage `finally`) a été supprimé : le XML est passé en chaîne à `injectXmlIntoPdf()`.
+- Action `lemonfacturx_generatechorus` soumise au même contrôle CSRF (`currentToken()`) et à la vérification de droit `userCanWrite()`.
+- En cas d'échec, le PDF principal n'est **jamais** touché.
+- `$phpBin` et `resolvePhpBinary()` supprimés de `generateChorusOnDemand()`.
 
-**Seul écart identifié :** absence de timeout sur le subprocess Chorus — couvert par le constat 2.4 ci-dessus.
+**Aucune vulnérabilité identifiée.**
 
 ---
 
@@ -246,7 +238,8 @@ La valeur retournée est passée à `file_get_contents()` via `lemonfacturx_extr
 ```php
 $candidate = DOL_DATA_ROOT.'/'.ltrim($lastMainDoc, '/');
 $real = realpath($candidate);
-if ($real !== false && str_starts_with($real, realpath(DOL_DATA_ROOT).'/') && file_exists($real)) {
+$base = realpath(DOL_DATA_ROOT);
+if ($real !== false && $base !== false && strpos($real, $base.'/') === 0 && file_exists($real)) {
     return $real;
 }
 ```
@@ -297,17 +290,41 @@ La regex de validation de l'URL (`#^https://github\.com/hello-lemon/...#`) n'est
 - `DOMDocument::loadXML()` appelé sans `LIBXML_NOENT` ni `LIBXML_DTDLOAD`.
 - `libxml_use_internal_errors(true)` activé avant l'appel, erreurs collectées et vidées proprement.
 - Le paramètre `$xml` reçu par `lemonfacturx_validate_xsd()` et `lemonfacturx_validate_business_rules()` est dans tous les cas soit généré par `lemonfacturx_build_xml()` (valeurs sanitisées via `htmlspecialchars(ENT_XML1)`), soit extrait d'un PDF sur disque — jamais issu d'une entrée HTTP directe.
-- En PHP 8.0+, le chargement d'entités externes est désactivé par défaut dans `loadXML()`. Le module requiert PHP 8.1 (cf. CLAUDE.md) — XXE non exploitable.
+- En PHP 8.0+, le chargement d'entités externes est désactivé par défaut dans `loadXML()` — XXE non exploitable sur ces versions.
+- Sur PHP 7.4 (minimum déclaré dans `composer.json`), `loadXML()` charge les entités externes par défaut et `libxml_disable_entity_loader(true)` n'est **pas** appelé dans ce fichier. Voir constat 2.18.
 
-**Note :** le `composer.json` déclare `"php": "^7.4||^8.0"`, en contradiction avec le minimum PHP 8.1 annoncé dans CLAUDE.md. Sur PHP 7.4, l'absence de `libxml_disable_entity_loader(true)` serait exploitable si du XML externe était parsé. Voir constat 2.18.
+**Aucune vulnérabilité identifiée sur PHP ≥ 8.0. Voir constat 2.18 pour PHP 7.4.**
 
-**Aucune vulnérabilité identifiée à la version PHP déclarée dans CLAUDE.md.**
+### 2.18 🟡 Protection XXE absente pour PHP < 8.0 (`lemonfacturx_rules.php`)
 
-### 2.18 🔵 Incohérence de la version PHP minimale (`composer.json` vs CLAUDE.md)
+Le module supporte PHP 7.4+ (`composer.json` : `"php": "^7.4||^8.0"`). Sur PHP < 8.0, `DOMDocument::loadXML()` charge les entités externes par défaut. `libxml_disable_entity_loader(true)` n'est pas appelé dans `lemonfacturx_rules.php`.
 
-`composer.json` déclare `"php": "^7.4||^8.0"`, mais CLAUDE.md indique « PHP 8.1 minimum ». Cette contradiction a des implications sécurité concrètes : sur PHP 7.4, `DOMDocument::loadXML()` charge les entités externes par défaut (XXE activé par défaut), et `libxml_disable_entity_loader()` n'est pas appelé dans `lemonfacturx_rules.php`.
+**Exploitabilité :** le XML parsé est soit généré par le module lui-même (`lemonfacturx_build_xml()`), soit extrait d'un PDF sur disque via `lemonfacturx_extract_xml_from_pdf()`. Un PDF contenant un XML avec des entités externes malveillantes (XXE) pourrait déclencher une lecture de fichier arbitraire côté serveur lors de la validation, sur les instances tournant sous PHP < 8.0.
 
-**Recommandation :** aligner `composer.json` sur la réalité : `"php": "^8.1"`. Cela clarifie le support, ferme l'ambiguïté XXE, et supprime des versions EOL (PHP 7.4 fin de vie en novembre 2022, PHP 8.0 en novembre 2023).
+**Recommandation :** ajouter la protection dans `lemonfacturx_validate_xsd()` et `lemonfacturx_validate_business_rules()` avant tout appel à `loadXML()` :
+
+```php
+if (PHP_MAJOR_VERSION < 8 && function_exists('libxml_disable_entity_loader')) {
+    libxml_disable_entity_loader(true);
+}
+```
+
+*Note : `libxml_disable_entity_loader()` est déprécié en PHP 8.0 (sans effet, la protection est native) mais son appel conditionnel sur PHP 7.x est sans risque.*
+
+### 2.19 🔵 Injection in-process — changement de modèle d'isolation (22/06/2026)
+
+Le passage de `exec(inject_facturx.php)` à `\Atgp\FacturX\Writer::generate()` in-process modifie le modèle de menace de l'injection PDF :
+
+| Aspect | Ancien modèle (subprocess) | Nouveau modèle (in-process) |
+|---|---|---|
+| Crash sur PDF/XML pathologique | Isole le process CLI, la requête web continue | Lève une `\Throwable` catchée dans `injectXmlIntoPdf()` |
+| Exhaustion mémoire | Limitée au process CLI (ulimit séparé) | Affecte directement le process web (FPM worker) |
+| `max_execution_time` | Ne couvre pas le temps `exec()` | Couvre l'appel Writer normalement |
+| Conflit de classe FPDF | Nécessitait l'isolation du subprocess | Résolu par renommage `SetasignFPDF` (patches/) |
+
+Le `try/catch(\Throwable)` dans `injectXmlIntoPdf()` protège contre les exceptions. Le risque résiduel est une exhaustion mémoire sur PDF très volumineux, couvert par le constat 2.5.
+
+**Aucune nouvelle vulnérabilité exploitable identifiée.** Le modèle in-process est standard pour les bibliothèques PDF PHP (TCPDF, mPDF, etc.) et considéré acceptable dans ce contexte.
 
 ---
 
@@ -316,14 +333,14 @@ La regex de validation de l'URL (`#^https://github\.com/hello-lemon/...#`) n'est
 | # | Constat | Priorité | Action |
 |---|---|---|---|
 | 2.10 | CSRF `chorus_tab.php` — `newToken()` → `currentToken()` | 🟠 Moyenne | Corriger ligne 48 de `chorus_tab.php` |
-| ~~1.4~~ | ~~Workflow `release-zip.yml` non mis à jour pour Composer~~ | ✅ Résolu | `composer install --no-dev` ajouté au workflow |
 | 2.12 | Path traversal `last_main_doc` — pas de `realpath()` containment | 🟡 Faible | Ajouter vérification `str_starts_with(realpath(...), realpath(DOL_DATA_ROOT))` |
-| 2.4 | Pas de timeout sur les subprocessus d'injection (principal + Chorus) | 🟡 Faible | Aligner sur le traitement déjà fait pour veraPDF |
-| 2.5 | Pas de contrôle taille/signature avant lecture PDF/XML | 🟡 Faible | Ajouter un garde-fou avant `file_get_contents()` |
-| 2.3 | Portée admin de `LEMONFACTURX_PHP_CLI_PATH` | 🟡 Faible | Documenter en contexte multi-admin |
-| 2.18 | `composer.json` permet PHP 7.4/8.0, CLAUDE.md dit 8.1 | 🔵 Info | Mettre à jour `composer.json` → `"php": "^8.1"` |
+| 2.5 | Pas de contrôle taille/signature avant chargement PDF in-process | 🟡 Faible | Ajouter garde-fou dans `injectXmlIntoPdf()` avant `file_get_contents()` |
+| 2.19 | Injection in-process — changement de modèle d'isolation | 🔵 Info | Pris en compte via 2.5 ; aucune action bloquante |
+| 2.18 | Protection XXE absente pour PHP < 8.0 (`lemonfacturx_rules.php`) | 🟡 Faible | Ajouter `libxml_disable_entity_loader(true)` conditionnel avant `loadXML()` |
 | 2.14 | URL de mise à jour non re-validée depuis le cache | 🔵 Info | Appliquer la regex de validation aussi sur la lecture de cache |
 | 2.6 | Dépendance à `.htaccess` (inopérant sous Nginx) | 🔵 Info | Vérifier la config serveur réelle |
+| ~~2.3~~ | ~~Portée admin de `LEMONFACTURX_PHP_CLI_PATH`~~ | ✅ Résolu | `resolvePhpBinary()` supprimé, paramètre inutilisé |
+| ~~2.4~~ | ~~Pas de timeout sur les subprocessus d'injection~~ | ✅ Résolu | Subprocessus d'injection supprimés |
 | ~~1.1~~ | ~~FPDI CVE-2026-45802~~ | ✅ Résolu | FPDI mis à jour en 2.6.8 |
 | ~~1.2~~ | ~~FPDF CVE-2025-65875~~ | ✅ Résolu | FPDF mis à jour en 1.9.0 |
 | ~~1.3~~ | ~~Absence de composer.lock~~ | ✅ Résolu | composer.lock ajouté |
@@ -337,8 +354,8 @@ La regex de validation de l'URL (`#^https://github\.com/hello-lemon/...#`) n'est
 
 | Fichier | Statut | Date |
 |---|---|---|
-| `scripts/inject_facturx.php` | ✅ Couvert | Audit initial |
-| `class/actions_lemonfacturx.class.php` | ✅ Couvert | Audit initial + mise à jour |
+| `scripts/inject_facturx.php` | ✅ Supprimé | Script supprimé le 22/06/2026 — injection migrée in-process (`injectXmlIntoPdf()`) |
+| `class/actions_lemonfacturx.class.php` | ✅ Couvert | Audit initial + mise à jour 22/06/2026 |
 | `admin/setup.php` | ✅ Couvert | Mise à jour 21/06/2026 |
 | `chorus_tab.php` | ✅ Couvert | Mise à jour 21/06/2026 |
 | `core/lib/lemonfacturx.lib.php` | ✅ Couvert | Mise à jour 21/06/2026 |

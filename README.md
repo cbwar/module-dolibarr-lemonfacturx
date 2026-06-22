@@ -74,7 +74,6 @@ lemonfacturx/
 │   ├── actions_lemonfacturx.class.php       # Hooks afterPDFCreation + invoicecard
 │   └── api_lemonfacturx.class.php           # API REST (xml / status)
 ├── scripts/
-│   ├── inject_facturx.php                   # Injection PDF (subprocess, CLI only)
 │   └── export_facturx_batch.php             # Export par lot des XML embarqués
 ├── admin/setup.php                          # Page de configuration + diagnostic
 ├── langs/fr_FR + en_US/lemonfacturx.lang    # Traductions
