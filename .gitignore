@@ -1,2 +1,6 @@
 /vendor/
 /dist/
+
+# PHPUNIT
+.phpunit.result.cache
+phpunit.xml

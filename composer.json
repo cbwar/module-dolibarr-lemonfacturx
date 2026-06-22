@@ -11,5 +11,12 @@
         "setasign/fpdf": "^1.9",
         "setasign/fpdi": "^2.6",
         "atgp/factur-x": "^3.3"
+    },
+    "scripts": {
+        "post-install-cmd": "for f in patches/*.patch; do patch -p1 -N < \"$f\" || true; done",
+        "post-update-cmd": "@post-install-cmd"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.2"
     }
 }

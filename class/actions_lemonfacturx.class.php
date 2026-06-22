@@ -22,9 +22,6 @@ class ActionsLemonFacturX
 	public $resPrint = '';
 	public $results = [];
 
-	/** @var string|null Fichier XML temporaire à nettoyer en sortie de hook */
-	private $xmlTmpFile = null;
-
 	public function __construct($db)
 	{
 		$this->db = $db;
@@ -111,81 +108,36 @@ class ActionsLemonFacturX
 			}
 		}
 
-		// Écrire le XML dans un fichier temporaire pour le subprocess d'injection.
-		// On écrit dans DOL_DATA_ROOT/facturx/temp/ (toujours dans l'open_basedir
-		// Dolibarr) au lieu de sys_get_temp_dir() qui peut tomber hors open_basedir
-		// sur Windows (sys temp = C:\WINDOWS\TEMP).
-		$xmlTempDir = DOL_DATA_ROOT.'/facturx/temp';
-		dol_mkdir($xmlTempDir);
-		$this->xmlTmpFile = tempnam($xmlTempDir, 'facturx_');
-		if ($this->xmlTmpFile === false) {
-			$this->xmlTmpFile = null;
-			return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrTempDir', $xmlTempDir), $strict);
-		}
-		if (file_put_contents($this->xmlTmpFile, $xml) === false) {
-			@unlink($this->xmlTmpFile);
-			$this->xmlTmpFile = null;
-			return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrTempWrite', $xmlTempDir), $strict);
+		$injectError = $this->injectXmlIntoPdf($file, $xml, $modulePath);
+		if ($injectError !== null) {
+			return $this->handleNonFatal('LemonFacturX: '.$injectError, $strict);
 		}
 
-		try {
-			if (!function_exists('exec')) {
-				return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrNoExec'), $strict);
-			}
+		// Post-validation PDF/A-3 optionnelle via veraPDF (non bloquante)
+		$veraWarning = $this->runVeraPdf($file);
+		if ($veraWarning !== null) {
+			$warnings[] = $veraWarning;
+		}
 
-			$phpBin = $this->resolvePhpBinary($strict);
-			if ($phpBin === null) {
-				// Le message a déjà été remonté par resolvePhpBinary()
-				return $strict ? -1 : 0;
-			}
-
-			$cmd  = escapeshellarg($phpBin);
-			$cmd .= ' '.escapeshellarg($modulePath.'/scripts/inject_facturx.php');
-			$cmd .= ' '.escapeshellarg($file);
-			$cmd .= ' '.escapeshellarg($this->xmlTmpFile);
-			$cmd .= ' 2>&1';
-
-			$output = [];
-			$returnCode = 0;
-			exec($cmd, $output, $returnCode);
-
-			if ($returnCode !== 0) {
-				// On tronque la sortie brute du subprocess (chemins serveur)
-				$detail = dol_trunc(implode(' ', $output), 300);
-				return $this->handleNonFatal('LemonFacturX: '.lemonfacturx_trans('LemonFacturXErrInjectFailed').' : '.$detail, $strict);
-			}
-
-			// Post-validation PDF/A-3 optionnelle via veraPDF (non bloquante)
-			$veraWarning = $this->runVeraPdf($file);
-			if ($veraWarning !== null) {
-				$warnings[] = $veraWarning;
-			}
-
-			// Fonctionnalités Chorus Pro (opt-in via LEMONFACTURX_CHORUS_ENABLED).
-			if (getDolGlobalInt('LEMONFACTURX_CHORUS_ENABLED')) {
-				// Activé : génère le PDF Chorus EN PLUS du standard si la facture
-				// relève du public. N'altère jamais le PDF principal.
-				if (lemonfacturx_is_chorus_invoice($invoice)) {
-					$chorus = $this->generateChorusPdf($invoice, $file, $mysoc, $modulePath, $phpBin);
-					if (!$chorus['ok']) {
-						$warnings[] = $chorus['msg'];
-					}
+		// Fonctionnalités Chorus Pro (opt-in via LEMONFACTURX_CHORUS_ENABLED).
+		if (getDolGlobalInt('LEMONFACTURX_CHORUS_ENABLED')) {
+			// Activé : génère le PDF Chorus EN PLUS du standard si la facture
+			// relève du public. N'altère jamais le PDF principal.
+			if (lemonfacturx_is_chorus_invoice($invoice)) {
+				$chorus = $this->generateChorusPdf($invoice, $file, $mysoc, $modulePath);
+				if (!$chorus['ok']) {
+					$warnings[] = $chorus['msg'];
 				}
-			} elseif (lemonfacturx_is_public_sector_siret($invoice)) {
-				// Désactivé mais acheteur public détecté : on informe (sans rien
-				// générer), pour suggérer d'activer Chorus Pro si besoin.
-				$warnings[] = lemonfacturx_trans('LemonFacturXChorusSuggested');
 			}
-
-			dol_syslog('LemonFacturX: PDF Factur-X généré pour '.$invoice->ref, LOG_INFO);
-			$this->reportSuccess($invoice->ref, $warnings);
-			return 0;
-		} finally {
-			if ($this->xmlTmpFile !== null) {
-				@unlink($this->xmlTmpFile);
-				$this->xmlTmpFile = null;
-			}
+		} elseif (lemonfacturx_is_public_sector_siret($invoice)) {
+			// Désactivé mais acheteur public détecté : on informe (sans rien
+			// générer), pour suggérer d'activer Chorus Pro si besoin.
+			$warnings[] = lemonfacturx_trans('LemonFacturXChorusSuggested');
 		}
+
+		dol_syslog('LemonFacturX: PDF Factur-X généré pour '.$invoice->ref, LOG_INFO);
+		$this->reportSuccess($invoice->ref, $warnings);
+		return 0;
 	}
 
 	/**
@@ -201,10 +153,9 @@ class ActionsLemonFacturX
 	 * @param string  $mainPdf     Chemin du PDF principal (source de la copie)
 	 * @param Societe $mysoc
 	 * @param string  $modulePath
-	 * @param string  $phpBin      Binaire PHP CLI déjà résolu
 	 * @return array{ok:bool,msg:string}
 	 */
-	protected function generateChorusPdf($invoice, $mainPdf, $mysoc, $modulePath, $phpBin)
+	protected function generateChorusPdf($invoice, $mainPdf, $mysoc, $modulePath)
 	{
 		$options = lemonfacturx_chorus_options($invoice);
 
