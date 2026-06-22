@@ -42,7 +42,7 @@ LemonFacturX est un module Dolibarr qui convertit automatiquement les PDF factur
 - **Hooks `invoicecard`** (boutons « Vérifier / Régénérer Factur-X ») : réservés aux utilisateurs authentifiés avec droits factures (`lire` / `creer`), protégés par token CSRF (`currentToken()`)
 - **Page de configuration admin** : `admin/setup.php`, réservée aux admins via `accessforbidden()` + protection CSRF sur le POST de mise à jour
 - **API REST** : `class/api_lemonfacturx.class.php`, exposée uniquement si le module API REST Dolibarr est activé ; clé API requise, droits `facture->lire` + `_checkAccessToResource()` vérifiés
-- **Scripts CLI** : `scripts/inject_facturx.php`, `scripts/export_facturx_batch.php`, `tests/*.php`, `demo/*.php` — tous protégés contre l'accès HTTP direct par `PHP_SAPI === 'cli'`, et les dossiers `scripts/`, `tests/`, `demo/` portent un `.htaccess` `Require all denied` en défense en profondeur
+- **Scripts CLI** : `scripts/export_facturx_batch.php`, `tests/*.php`, `demo/*.php` — tous protégés contre l'accès HTTP direct par `PHP_SAPI === 'cli'`, et les dossiers `scripts/`, `tests/`, `demo/` portent un `.htaccess` `Require all denied` en défense en profondeur
 - **Appel HTTP sortant unique** : vérification de la dernière release GitHub via `api.github.com`, au chargement de la page de configuration admin, avec cache 24h (succès **et** échecs) et timeout 5s (aucune donnée locale envoyée, uniquement une requête `GET` anonyme)
 - **Binaire externe optionnel** : veraPDF (`LEMONFACTURX_VERAPDF_PATH`, constante admin), invoqué via `escapeshellarg()` + `is_executable()`
 - **Aucun endpoint web exposé publiquement**
@@ -54,17 +54,11 @@ LemonFacturX est un module Dolibarr qui convertit automatiquement les PDF factur
 
 ## Protections en place
 
-### Exécution d'un subprocess PHP (`exec`)
+### Injection PDF in-process (`\Atgp\FacturX\Writer`)
 
-Le module lance un subprocess CLI pour éviter un conflit de classes entre FPDF (utilisé par `atgp/factur-x`) et TCPDF (utilisé par Dolibarr). Le binaire est configurable via la constante `LEMONFACTURX_PHP_CLI_PATH`.
+Le module appelle `\Atgp\FacturX\Writer::generate()` directement dans le process web — aucun subprocess `exec()` n'est lancé pour l'injection. Le conflit historique entre `class FPDF` de `setasign/fpdf` et le FPDF embarqué dans Dolibarr est résolu par un patch vendored (`patches/fpdf.patch`, `patches/fpdi.patch`) qui renomme la classe en `SetasignFPDF`. Ce patch est appliqué automatiquement par `composer install`.
 
-Protections :
-
-- `escapeshellarg()` est appliqué sur **tous** les tokens de la commande (binaire PHP, script, PDF, fichier XML temporaire). Une valeur piégée dans la constante est quotée, et le shell cherche un binaire avec ce nom littéral qui n'existe pas → `command not found`. Pas de chaînage de commandes possible.
-- Validation par regex `^[A-Za-z0-9/._:() \\-]+$` sur `LEMONFACTURX_PHP_CLI_PATH` avant l'appel (`: \ ( )` et espace autorisés pour les chemins Windows). Toute valeur contenant des caractères exotiques (`;`, `&`, `$`, guillemets, etc.) est refusée avec un message d'erreur clair.
-- Si le chemin est absolu, `is_executable()` vérifie qu'un exécutable existe effectivement.
-- `function_exists('exec')` est testé en amont (certains hébergeurs désactivent `exec`).
-- Le script CLI `inject_facturx.php` refuse tout appel via HTTP : `if (php_sapi_name() !== 'cli') { http_response_code(403); die(...); }`
+L'écriture du PDF Factur-X est **atomique** : écriture dans `{pdf}.facturx.tmp` puis `rename()` — un crash ou un disque plein ne peut pas laisser un PDF tronqué.
 
 ### Manipulation de fichiers
 

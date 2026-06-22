@@ -43,8 +43,16 @@ function lemonfacturx_validate_xsd($xml, $modulePath)
 		return !empty($errs) ? trim($errs[0]->message) : $fallback;
 	};
 
+	// Sur PHP < 8.0, le chargement d'entités externes est actif par défaut dans loadXML().
+	if (PHP_MAJOR_VERSION < 8) {
+		$prevEntityLoader = libxml_disable_entity_loader(true);
+	}
 	$dom = new DOMDocument();
-	if (!$dom->loadXML($xml)) {
+	$loaded = $dom->loadXML($xml);
+	if (PHP_MAJOR_VERSION < 8) {
+		libxml_disable_entity_loader($prevEntityLoader);
+	}
+	if (!$loaded) {
 		return 'XML mal formé : '.$firstError('XML mal formé');
 	}
 
@@ -77,8 +85,15 @@ function lemonfacturx_validate_business_rules($xml)
 	$violations = [];
 
 	$prevUseErrors = libxml_use_internal_errors(true);
+	if (PHP_MAJOR_VERSION < 8) {
+		$prevEntityLoader = libxml_disable_entity_loader(true);
+	}
 	$dom = new DOMDocument();
-	if (!$dom->loadXML($xml)) {
+	$loaded = $dom->loadXML($xml);
+	if (PHP_MAJOR_VERSION < 8) {
+		libxml_disable_entity_loader($prevEntityLoader);
+	}
+	if (!$loaded) {
 		libxml_clear_errors();
 		libxml_use_internal_errors($prevUseErrors);
 		return ['XML : document non parsable'];

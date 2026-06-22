@@ -12,11 +12,6 @@ OUT="${DIST_DIR}/lemonfacturx-${VERSION}.zip"
 echo "Install dependencies"
 composer install --no-dev --optimize-autoloader --quiet
 
-echo "Applying patches"
-for patch in patches/*; do
-    patch -p1 -N < "$patch"
-done
-
 echo "Creating archive"
 mkdir -p "$DIST_DIR"
 test -f "$OUT" && rm -v "$OUT"

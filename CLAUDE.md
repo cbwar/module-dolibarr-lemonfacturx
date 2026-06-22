@@ -49,7 +49,6 @@ class/actions_lemonfacturx.class.php     # Hooks: afterPDFCreation + invoicecard
 class/api_lemonfacturx.class.php         # REST API: /xml and /status endpoints
 admin/setup.php                          # Settings page + diagnostic
 chorus_tab.php                           # Chorus Pro tab on invoice card (since 3.4.0)
-scripts/inject_facturx.php               # PDF injection subprocess (CLI only, never called directly from web)
 scripts/export_facturx_batch.php         # Batch XML extractor
 tests/unit-tests.php                     # Standalone tests (no Dolibarr)
 tests/stubs.php                          # Dolibarr stubs for standalone tests
@@ -61,7 +60,7 @@ tests/stubs.php                          # Dolibarr stubs for standalone tests
 2. `lemonfacturx_check_supported()` rejects multidevise and local-tax invoices (clean fail, classic PDF preserved).
 3. `lemonfacturx_generate_xml()` builds the CrossIndustryInvoice XML from the Dolibarr `Facture` object.
 4. Internal validation: well-formed → XSD EN16931 → BR-* rules (`lemonfacturx_rules.php`).
-5. `scripts/inject_facturx.php` runs as a **separate subprocess** via `exec()` to inject XML into the PDF atomically (temp file + `rename()`).
+5. `ActionsLemonFacturX::injectXmlIntoPdf()` calls `\Atgp\FacturX\Writer::generate()` in-process to embed the XML into the PDF atomically (temp file + `rename()`).
 6. Optional post-validation via veraPDF (`LEMONFACTURX_VERAPDF_PATH`).
 
 For **Chorus Pro** invoices (B2G, detected by flag or SIRET), a second PDF `{ref}-CHORUS.pdf` is generated in parallel with a SIRET-14 identifier instead of SIREN-9.
@@ -72,7 +71,7 @@ For **Chorus Pro** invoices (B2G, detected by flag or SIRET), a second PDF `{ref
 - **Credit notes**: Dolibarr stores negative totals; EN16931 requires positive amounts on type 381. All amounts are inverted, `DuePayableAmount` is exact (no clamping to zero, which would violate BR-CO-16).
 - **Negative-price lines → BG-21 allowances**: a negative-price line would violate BR-27, so they're converted to document-level allowances.
 - **VAT rounding reconciliation**: VAT breakdown is computed per (category, rate) then reconciled against invoice totals; the rounding delta is absorbed by the primary category. All BG-22 totals are recomputed bottom-up.
-- **Subprocess injection**: the `atgp/factur-x` lib requires CLI execution. The subprocess uses the PHP binary at `LEMONFACTURX_PHP_CLI_PATH` (default: `php`). Do **not** use `PHP_BINARY` — it points to the FPM binary in php-fpm context.
+- **In-process injection**: `\Atgp\FacturX\Writer` is called directly inside the web process. This is safe because `class FPDF` in `setasign/fpdf` is patched to `class SetasignFPDF` (via `patches/fpdf.patch` + `patches/fpdi.patch`), eliminating the class conflict with Dolibarr's own FPDF. The patches are applied automatically by `composer install` (`post-install-cmd` in `composer.json`).
 - **Best-effort vs strict**: in best-effort (default), XML/injection failures show a warning and the classic PDF is kept. In strict mode (`LEMONFACTURX_STRICT_MODE=1`), BR-* violations and injection errors are blocking. Note: the classic PDF already written to disk is never deleted either way.
 
 ### Security constraints

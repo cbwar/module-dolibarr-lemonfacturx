@@ -1,13 +1,20 @@
-diff --git a/vendor/setasign/fpdf/fpdf.php b/vendor/setasign/fpdf/fpdf.php
-index 2bca5fc..2d788d4 100644
---- a/vendor/setasign/fpdf/fpdf.php
-+++ b/vendor/setasign/fpdf/fpdf.php
-@@ -1566,7 +1566,7 @@ protected function _putlinks($n)
+--- a/vendor/setasign/fpdf/fpdf.php	2026-06-22 10:14:04.422096358 +0200
++++ b/vendor/setasign/fpdf/fpdf.php	2026-06-22 10:15:29.631320246 +0200
+@@ -7,7 +7,7 @@
+ * Author:  Olivier Plathey                                                     *
+ *******************************************************************************/
+
+-class FPDF
++class SetasignFPDF
+ {
+ const VERSION = '1.9';
+ protected $page;               // current page number
+@@ -1566,7 +1566,7 @@
  	{
  		$this->_newobj();
  		$rect = sprintf('%.2F %.2F %.2F %.2F', $pl[0], $pl[1], $pl[0]+$pl[2], $pl[1]-$pl[3]);
 -		$s = '<</Type /Annot /Subtype /Link /Rect ['.$rect.'] /Border [0 0 0] ';
-+		$s = '<</Type /Annot /Subtype /Link /F 4 /Rect ['.$rect.'] /Border [0 0 0] ';
++		$s = '<</Type /Annot /Subtype /F 4 /Link /Rect ['.$rect.'] /Border [0 0 0] ';
  		if(is_string($pl[4]))
  			$s .= '/A <</S /URI /URI '.$this->_textstring($pl[4]).'>>>>';
  		else
