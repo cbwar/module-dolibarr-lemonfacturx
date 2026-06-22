@@ -16,11 +16,7 @@ jobs:
         # Action épinglée par SHA (supply-chain) : v4.3.1
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Get PHP Versions
-        id: php-version
-        uses: antfroger/php-version-action@v1
-
-      - name: Setup PHP (Minimal)
+      - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: 8.4
