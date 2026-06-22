@@ -10,11 +10,14 @@
 if (!class_exists('FPDF')) {
     class FPDF
     {
-        public function dolibarrCoreMethod(): string { return 'dolibarr'; }
+        public function dolibarrCoreMethod(): string
+        {
+            return 'dolibarr';
+        }
     }
 }
 
-require_once __DIR__.'/../vendor/autoload.php';
-require_once __DIR__.'/stubs.php';
-require_once __DIR__.'/../core/lib/lemonfacturx.lib.php';
-require_once __DIR__.'/../core/lib/lemonfacturx_rules.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/stubs.php';
+require_once __DIR__ . '/../core/lib/lemonfacturx.lib.php';
+require_once __DIR__ . '/../core/lib/lemonfacturx_rules.php';
