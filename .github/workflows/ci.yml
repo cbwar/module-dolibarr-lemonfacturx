@@ -39,3 +39,12 @@ jobs:
 
       - name: Run PHPUnit tests
         run: php vendor/bin/phpunit
+
+      - name: PHP Compatibility 7.4
+        run: php vendor/bin/phpcs -p ./*.php -p ./core -p ./class -p ./admin --standard=vendor/phpcompatibility/php-compatibility/PHPCompatibility/ruleset.xml --runtime-set testVersion 7.4
+      - name: PHP Compatibility 8.0
+        run: php vendor/bin/phpcs -p ./*.php -p ./core -p ./class -p ./admin --standard=vendor/phpcompatibility/php-compatibility/PHPCompatibility/ruleset.xml --runtime-set testVersion 8.0
+      - name: PHP Compatibility 8.2
+        run: php vendor/bin/phpcs -p ./*.php -p ./core -p ./class -p ./admin --standard=vendor/phpcompatibility/php-compatibility/PHPCompatibility/ruleset.xml --runtime-set testVersion 8.2
+      - name: PHP Compatibility 8.4
+        run: php vendor/bin/phpcs -p ./*.php -p ./core -p ./class -p ./admin --standard=vendor/phpcompatibility/php-compatibility/PHPCompatibility/ruleset.xml --runtime-set testVersion 8.4
