@@ -1,14 +1,6 @@
-*.swp
-*.swo
-*~
-.DS_Store
+/vendor/
+/dist/
 
-# Vendor: tests, docs, tutoriels, CI (fichiers non necessaires et potentiellement dangereux)
-vendor/**/tests/
-vendor/**/test/
-vendor/**/doc/
-vendor/**/docs/
-vendor/**/tutorial/
-vendor/**/makefont/
-vendor/**/img/
-vendor/**/.github/
+# PHPUNIT
+.phpunit.result.cache
+phpunit.xml

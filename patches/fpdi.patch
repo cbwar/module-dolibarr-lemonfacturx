@@ -1,0 +1,11 @@
+--- a/vendor/setasign/fpdi/src/FpdfTpl.php
++++ b/vendor/setasign/fpdi/src/FpdfTpl.php
+@@ -15,7 +15,7 @@
+  *
+  * This class adds a templating feature to FPDF.
+  */
+-class FpdfTpl extends \FPDF
++class FpdfTpl extends \SetasignFPDF
+ {
+     use FpdfTplTrait;
+ }
