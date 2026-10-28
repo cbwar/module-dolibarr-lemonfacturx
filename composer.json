@@ -12,6 +12,9 @@
         "setasign/fpdi": "^2.6",
         "atgp/factur-x": "^3.3"
     },
+    "conflict": {
+        "php": "<8.2.35|>=8.3,<8.3.36|>=8.4,<8.4.27|>=8.5,<8.5.12"
+    },
     "scripts": {
         "post-install-cmd": "for f in patches/*.patch; do patch -p1 -N < \"$f\" || true; done",
         "post-update-cmd": "@post-install-cmd"
