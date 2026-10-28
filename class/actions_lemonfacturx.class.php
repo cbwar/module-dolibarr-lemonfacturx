@@ -817,7 +817,7 @@ class ActionsLemonFacturX
 		// Implémentation partagée avec les suites de tests : les tests valident
 		// le même code que la production (cf. core/lib/lemonfacturx_rules.php).
 		require_once $modulePath.'/core/lib/lemonfacturx_rules.php';
-		$xsdPath = $modulePath.'/vendor/atgp/factur-x/xsd/factur-x/en16931/Factur-X_1.08_EN16931.xsd';
+		$xsdPath = $modulePath.'/vendor/atgp/factur-x/xsd/factur-x/en16931/Factur-X_1.09.2_EN16931.xsd';
 		if (!file_exists($xsdPath)) {
 			dol_syslog('LemonFacturX: XSD EN16931 absent de vendor/, validation structurelle limitée au well-formed', LOG_WARNING);
 		}
