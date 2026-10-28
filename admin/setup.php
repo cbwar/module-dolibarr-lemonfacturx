@@ -51,20 +51,12 @@ if ($action == 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 	$error = 0;
 
-	// Mode d'injection : on n'accepte que les 3 valeurs connues (défaut auto).
-	$injMode = strtolower(trim(GETPOST('LEMONFACTURX_INJECTION_MODE', 'alpha')));
-	if (!in_array($injMode, ['auto', 'inprocess', 'subprocess'], true)) {
-		$injMode = 'auto';
-	}
-
 	$updates = [
-		['LEMONFACTURX_INJECTION_MODE', $injMode, 'chaine'],
 		['LEMONFACTURX_BANK_ACCOUNT', GETPOSTINT('LEMONFACTURX_BANK_ACCOUNT'),    'int'],
 		['LEMONFACTURX_PAYMENT_MEANS',trim(GETPOST('LEMONFACTURX_PAYMENT_MEANS', 'alpha')), 'chaine'],
 		['LEMONFACTURX_STRICT_MODE',  GETPOSTINT('LEMONFACTURX_STRICT_MODE'),     'int'],
 		['LEMONFACTURX_BR_CHECK',     GETPOSTINT('LEMONFACTURX_BR_CHECK'),        'int'],
 		['LEMONFACTURX_CHORUS_ENABLED', GETPOSTINT('LEMONFACTURX_CHORUS_ENABLED'), 'int'],
-		['LEMONFACTURX_PHP_CLI_PATH', trim(GETPOST('LEMONFACTURX_PHP_CLI_PATH', 'alphanohtml')), 'chaine'],
 		['LEMONFACTURX_VERAPDF_PATH', trim(GETPOST('LEMONFACTURX_VERAPDF_PATH', 'alphanohtml')), 'chaine'],
 		['LEMONFACTURX_ENDPOINT_SUFFIX_SELLER', trim(GETPOST('LEMONFACTURX_ENDPOINT_SUFFIX_SELLER', 'alphanohtml')), 'chaine'],
 		['LEMONFACTURX_NOTE_PMD',     trim(GETPOST('LEMONFACTURX_NOTE_PMD', 'restricthtml')),    'chaine'],
@@ -241,22 +233,6 @@ print '</select></td></tr>';
 // ---- Bloc 5 : Technique (avancé) ----
 print '<tr class="liste_titre"><td colspan="2">'.$langs->trans("LemonFacturXSecTech").'</td></tr>';
 
-// Mode d'injection du XML dans le PDF. In-process (sans exec) par défaut :
-// fonctionne sur les hébergements mutualisés où exec() est désactivé. Le
-// sous-process (historique) reste disponible en repli/forçage.
-$injModeCur = strtolower(trim(getDolGlobalString('LEMONFACTURX_INJECTION_MODE', 'auto')));
-if (!in_array($injModeCur, ['auto', 'inprocess', 'subprocess'], true)) {
-	$injModeCur = 'auto';
-}
-print '<tr class="oddeven"><td>'.$langs->trans("LemonFacturXInjectionMode").'<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXInjectionModeHint").'</span></td><td>';
-print '<select name="LEMONFACTURX_INJECTION_MODE" class="flat minwidth300">';
-foreach (['auto' => 'LemonFacturXInjectionModeAuto', 'inprocess' => 'LemonFacturXInjectionModeInProcess', 'subprocess' => 'LemonFacturXInjectionModeSubprocess'] as $injVal => $injKey) {
-	print '<option value="'.$injVal.'"'.($injModeCur === $injVal ? ' selected' : '').'>'.$langs->trans($injKey).'</option>';
-}
-print '</select></td></tr>';
-
-print '<tr class="oddeven"><td>'.$langs->trans("LemonFacturXPhpCliPath").'<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXPhpCliPathHint").'</span></td><td>';
-print '<input type="text" name="LEMONFACTURX_PHP_CLI_PATH" class="flat minwidth300" value="'.dol_escape_htmltag(getDolGlobalString('LEMONFACTURX_PHP_CLI_PATH', '')).'" placeholder="'.$langs->trans("LemonFacturXPhpCliAutoPlaceholder").'"></td></tr>';
 // veraPDF : outil EXTERNE optionnel, non embarqué et non installé par défaut.
 // Vide = pas de post-validation (le contrôle XSD + règles BR internes reste actif).
 print '<tr class="oddeven"><td>'.$langs->trans("LemonFacturXVeraPdfPath").'<br><span class="opacitymedium small">'.$langs->trans("LemonFacturXVeraPdfPathHint").'</span></td><td>';
@@ -378,62 +354,6 @@ if (trim($freeTextDiag) === '') {
 	$diagWarnings[] = ['msg' => $langs->trans("LemonFacturXDiagFreeTextMissing")];
 } else {
 	$diagOk[] = $langs->trans("LemonFacturXDiagFreeTextOk");
-}
-
-// Diagnostic d'injection, dépendant du mode choisi. L'injection in-process n'a
-// lieu qu'en mode 'inprocess' (forcé) ou en mode 'auto' sur un serveur SANS
-// exec() → là, exec()/PHP CLI ne sont pas requis (mutualisés durcis). Sinon
-// (mode 'auto' avec exec, ou mode 'subprocess'), c'est le sous-process — process
-// PHP isolé, le chemin le plus sûr — qui injecte : exec() + PHP CLI valide requis.
-$diagInjMode = strtolower(trim(getDolGlobalString('LEMONFACTURX_INJECTION_MODE', 'auto')));
-if (!in_array($diagInjMode, ['auto', 'inprocess', 'subprocess'], true)) {
-	$diagInjMode = 'auto';
-}
-$execAvailable = function_exists('exec');
-// tcpdi actif (défaut Dolibarr) = un « class FPDF extends TCPDF » est chargé à
-// chaque génération PDF (pdf_getInstance) → incompatible avec l'injection
-// in-process. MAIN_DISABLE_TCPDI=1 désactive ce moteur (et la fusion PDF de
-// Dolibarr) mais débloque l'in-process.
-$tcpdiActive = !getDolGlobalString('MAIN_DISABLE_TCPDI');
-
-if ($diagInjMode === 'inprocess') {
-	if ($tcpdiActive) {
-		$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagTcpdiConflict"), 'fix' => '/admin/const.php'];
-	} else {
-		$diagOk[] = $langs->trans("LemonFacturXDiagInjInProcess");
-	}
-} elseif ($diagInjMode === 'subprocess') {
-	if (!$execAvailable) {
-		$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagExecRequiredSub"), 'fix' => '/custom/lemonfacturx/admin/setup.php'];
-	} else {
-		$diagOk[] = $langs->trans("LemonFacturXDiagInjSubprocess");
-	}
-} else { // auto
-	if ($execAvailable) {
-		$diagOk[] = $langs->trans("LemonFacturXDiagInjAuto");
-	} elseif ($tcpdiActive) {
-		// auto sans exec → in-process, mais tcpdi actif → échec garanti : on guide.
-		$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagTcpdiConflict"), 'fix' => '/admin/const.php'];
-	} else {
-		$diagOk[] = $langs->trans("LemonFacturXDiagInjAutoNoExec");
-	}
-}
-
-// Binaire PHP CLI : pertinent uniquement quand le sous-process peut servir
-// (mode subprocess, ou mode auto avec exec dispo). Sinon, sans objet.
-if ($execAvailable && $diagInjMode !== 'inprocess') {
-	$phpCliManual = trim(getDolGlobalString('LEMONFACTURX_PHP_CLI_PATH', ''));
-	// 'php' nu = pas une vraie surcharge (cohérent avec lemonfacturx_resolve_php_cli) → auto.
-	$phpCliIsAuto = ($phpCliManual === '' || $phpCliManual === 'php');
-	$phpCliResolved = lemonfacturx_resolve_php_cli($db);
-	$phpCliLabel = $phpCliResolved.($phpCliIsAuto ? ' ('.$langs->trans("LemonFacturXDiagPhpCliAuto").')' : '');
-	if (lemonfacturx_php_cli_is_valid($phpCliResolved)) {
-		$diagOk[] = $langs->trans("LemonFacturXDiagPhpCliOk").' : '.dol_escape_htmltag($phpCliLabel);
-	} else {
-		// Mode subprocess OU auto-avec-exec : le sous-process est le chemin
-		// d'injection effectif → un CLI invalide est bloquant.
-		$diagErrors[] = ['msg' => $langs->trans("LemonFacturXDiagPhpCliNotFound", dol_escape_htmltag($phpCliResolved)), 'fix' => '/custom/lemonfacturx/admin/setup.php'];
-	}
 }
 
 // Multidevise : avertissement informatif (les factures en devise étrangère sont ignorées)

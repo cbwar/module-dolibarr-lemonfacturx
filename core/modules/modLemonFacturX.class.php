@@ -82,8 +82,6 @@ class modLemonFacturX extends DolibarrModules
 			array('LEMONFACTURX_PAYMENT_MEANS', 'chaine', '30', 'Code moyen de paiement UNTDID 4461 (30=virement, 58=virement SEPA, 59=prélèvement SEPA, 49=prélèvement)', 1, 'current', 0),
 			array('LEMONFACTURX_STRICT_MODE', 'int', '0', 'Mode erreur : 0 = best-effort, 1 = strict bloquant', 1, 'current', 0),
 			array('LEMONFACTURX_BR_CHECK', 'int', '1', 'Contrôle interne des règles métier EN16931 (BR-*) avant injection', 1, 'current', 0),
-			array('LEMONFACTURX_INJECTION_MODE', 'chaine', 'auto', 'Mode d\'injection du XML : auto (sous-process si exec dispo, sinon in-process) | inprocess (sans exec, hébergements durcis) | subprocess (exec uniquement, historique)', 1, 'current', 0),
-			array('LEMONFACTURX_PHP_CLI_PATH', 'chaine', '', 'Surcharge manuelle du binaire PHP CLI (utilisé seulement par le mode sous-process ; vide = auto-détection)', 1, 'current', 0),
 			array('LEMONFACTURX_VERAPDF_PATH', 'chaine', '', 'Chemin du binaire veraPDF pour post-validation PDF/A-3 (optionnel)', 1, 'current', 0),
 			array('LEMONFACTURX_ENDPOINT_SUFFIX_SELLER', 'chaine', '', 'Suffixe ajouté au SIREN vendeur dans l\'adresse électronique BT-34 (ex _Status) — exigé par certaines PA ; vide = SIREN nu', 1, 'current', 0),
 			array('LEMONFACTURX_NOTE_PMD', 'chaine', '', 'Mention légale pénalités de retard (BR-FR-05, default appliqué si vide)', 1, 'current', 0),
