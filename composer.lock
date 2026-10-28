@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "882c9525a7049f63e80e9e50304b584a",
+    "content-hash": "8257e98bde3668f5258d53188efa8b3f",
     "packages": [
         {
             "name": "atgp/factur-x",
@@ -2384,7 +2384,7 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "php": "^7.4||^8.0"
+        "php": ">=8.2"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"

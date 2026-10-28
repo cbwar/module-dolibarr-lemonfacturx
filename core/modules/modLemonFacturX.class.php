@@ -34,7 +34,7 @@ class modLemonFacturX extends DolibarrModules
 
 		// Prérequis vérifiés à l'activation. Dolibarr 19 minimum : le module
 		// utilise GETPOSTINT() (introduit en 19.0) ; testé sur Dolibarr 22 / PHP 8.2.
-		$this->phpmin = array(8, 1);
+		$this->phpmin = array(8, 2);
 		$this->need_dolibarr_version = array(19, 0);
 
 		$this->module_parts = array(
